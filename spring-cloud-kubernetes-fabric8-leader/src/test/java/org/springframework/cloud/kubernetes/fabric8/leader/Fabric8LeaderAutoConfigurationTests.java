@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,40 +17,43 @@
 package org.springframework.cloud.kubernetes.fabric8.leader;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import static org.hamcrest.Matchers.containsString;
 
-@ExtendWith(MockitoExtension.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
 		properties = { "spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.leader.autoStartup=false",
 				"management.endpoints.web.exposure.include=info", "management.endpoint.info.show-details=always",
 				"management.info.kubernetes.enabled=true" })
-public class Fabric8LeaderAutoConfigurationTests {
+class Fabric8LeaderAutoConfigurationTests {
 
-	@Value("${local.server.port}")
+	@LocalManagementPort
 	private int port;
 
 	@Autowired
 	private WebTestClient webClient;
 
 	@Test
-	public void contextLoads() {
+	void contextLoads() {
 	}
 
 	@Test
-	public void infoEndpointShouldContainLeaderElection() {
-		this.webClient.get().uri("http://localhost:{port}/actuator/info", this.port).accept(MediaType.APPLICATION_JSON)
-				.exchange().expectStatus().isOk().expectBody(String.class).value(containsString("kubernetes"));
+	void infoEndpointShouldContainLeaderElection() {
+		webClient.get()
+			.uri("http://localhost:{port}/actuator/info", port)
+			.accept(MediaType.APPLICATION_JSON)
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(containsString("kubernetes"));
 	}
 
 	@SpringBootConfiguration

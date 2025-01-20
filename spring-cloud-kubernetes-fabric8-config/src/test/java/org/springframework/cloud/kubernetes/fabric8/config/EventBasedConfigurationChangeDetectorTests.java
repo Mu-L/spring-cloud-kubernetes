@@ -33,9 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.cloud.bootstrap.config.BootstrapPropertySource;
 import org.springframework.cloud.kubernetes.commons.config.NamedConfigMapNormalizedSource;
 import org.springframework.cloud.kubernetes.commons.config.NormalizedSource;
-import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadProperties;
-import org.springframework.cloud.kubernetes.commons.config.reload.ConfigurationUpdateStrategy;
-import org.springframework.cloud.kubernetes.fabric8.config.reload.EventBasedConfigMapChangeDetector;
+import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadUtil;
 import org.springframework.mock.env.MockEnvironment;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,10 +45,9 @@ import static org.mockito.Mockito.when;
  */
 class EventBasedConfigurationChangeDetectorTests {
 
-	@SuppressWarnings({ "unchecked", "raw" })
+	@SuppressWarnings({ "unchecked", "rawtypes" })
 	@Test
 	void verifyConfigChangesAccountsForBootstrapPropertySources() {
-		ConfigReloadProperties configReloadProperties = new ConfigReloadProperties();
 		MockEnvironment env = new MockEnvironment();
 		KubernetesClient k8sClient = mock(KubernetesClient.class);
 		ConfigMap configMap = new ConfigMap();
@@ -74,12 +71,8 @@ class EventBasedConfigurationChangeDetectorTests {
 		Fabric8ConfigMapPropertySource fabric8ConfigMapPropertySource = new Fabric8ConfigMapPropertySource(context);
 		env.getPropertySources().addFirst(new BootstrapPropertySource<>(fabric8ConfigMapPropertySource));
 
-		ConfigurationUpdateStrategy configurationUpdateStrategy = mock(ConfigurationUpdateStrategy.class);
-		Fabric8ConfigMapPropertySourceLocator configMapLocator = mock(Fabric8ConfigMapPropertySourceLocator.class);
-		EventBasedConfigMapChangeDetector detector = new EventBasedConfigMapChangeDetector(env, configReloadProperties,
-				k8sClient, configurationUpdateStrategy, configMapLocator);
-		List<Fabric8ConfigMapPropertySource> sources = detector
-				.findPropertySources(Fabric8ConfigMapPropertySource.class);
+		List<Fabric8ConfigMapPropertySource> sources = ConfigReloadUtil
+			.findPropertySources(Fabric8ConfigMapPropertySource.class, env);
 		assertThat(sources.size()).isEqualTo(1);
 		assertThat(sources.get(0).getProperty("foo")).isEqualTo("bar");
 	}

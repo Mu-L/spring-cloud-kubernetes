@@ -5,17 +5,15 @@
 	<parent>
 		<artifactId>spring-cloud-kubernetes-controllers</artifactId>
 		<groupId>org.springframework.cloud</groupId>
-<version>3.0.0-SNAPSHOT</version>
+		<version>3.3.0-SNAPSHOT</version>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
 
 	<artifactId>spring-cloud-kubernetes-discoveryserver</artifactId>
 
 	<properties>
-		<jib.version>1.8.0</jib.version>
-		<base.image>openjdk:8u222-slim</base.image>
 		<docker.registry.organization>springcloud</docker.registry.organization>
-		<plexus-archiver.version>4.1.0</plexus-archiver.version>
+		<plexus-archiver.version>4.10.0</plexus-archiver.version>
 	</properties>
 
 	<dependencies>
@@ -42,34 +40,16 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>com.github.tomakehurst</groupId>
-			<artifactId>wiremock-jre8-standalone</artifactId>
+			<groupId>org.wiremock</groupId>
+			<artifactId>wiremock-standalone</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-kubernetes-test-support</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-
-	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-maven-plugin</artifactId>
-				<configuration>
-					<image>
-						<name>${env.IMAGE}</name>
-					</image>
-					<goal>build-image</goal>
-				</configuration>
-				<executions>
-					<execution>
-						<phase>package</phase>
-						<goals>
-							<goal>build-image</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
-		</plugins>
-	</build>
 
 	<profiles>
 		<profile>
@@ -79,7 +59,7 @@
 					<plugin>
 						<groupId>com.spotify</groupId>
 						<artifactId>dockerfile-maven-plugin</artifactId>
-						<version>1.4.12</version>
+						<version>1.4.13</version>
 						<configuration>
 							<repository>${docker.registry.organization}/${artifactId}</repository>
 							<tag>${project.version}</tag>
@@ -110,39 +90,6 @@
 			<properties>
 				<env.IMAGE>springcloud/${project.artifactId}:${project.version}</env.IMAGE>
 			</properties>
-		</profile>
-		<profile>
-			<id>jib</id>
-			<build>
-				<plugins>
-					<plugin>
-						<groupId>com.google.cloud.tools</groupId>
-						<artifactId>jib-maven-plugin</artifactId>
-						<version>${jib.version}</version>
-						<configuration>
-							<from>
-								<image>${base.image}</image>
-							</from>
-							<to>
-								<image>spring-cloud/${project.artifactId}</image>
-							</to>
-							<container>
-								<user>nobody:nogroup</user>
-								<environment>
-								</environment>
-							</container>
-						</configuration>
-						<executions>
-							<execution>
-								<phase>package</phase>
-								<goals>
-									<goal>dockerBuild</goal>
-								</goals>
-							</execution>
-						</executions>
-					</plugin>
-				</plugins>
-			</build>
 		</profile>
 	</profiles>
 

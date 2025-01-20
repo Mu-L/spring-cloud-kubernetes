@@ -19,15 +19,15 @@ package org.springframework.cloud.kubernetes.fabric8.discovery;
 import io.fabric8.kubernetes.client.KubernetesClient;
 
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnCloudPlatform;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.cloud.CloudPlatform;
-import org.springframework.cloud.client.ConditionalOnDiscoveryEnabled;
+import org.springframework.cloud.kubernetes.commons.KubernetesNamespaceProvider;
+import org.springframework.cloud.kubernetes.commons.discovery.ConditionalOnKubernetesCatalogWatcherEnabled;
 import org.springframework.cloud.kubernetes.commons.discovery.KubernetesDiscoveryProperties;
+import org.springframework.cloud.kubernetes.commons.discovery.KubernetesDiscoveryPropertiesAutoConfiguration;
 import org.springframework.cloud.kubernetes.fabric8.Fabric8AutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
 /**
  * Auto configuration for catalog watcher.
@@ -35,18 +35,15 @@ import org.springframework.context.annotation.Configuration;
  * @author Tim Ysewyn
  */
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnDiscoveryEnabled
-@ConditionalOnCloudPlatform(CloudPlatform.KUBERNETES)
-@AutoConfigureAfter({ Fabric8AutoConfiguration.class })
+@ConditionalOnKubernetesCatalogWatcherEnabled
+@AutoConfigureAfter({ Fabric8AutoConfiguration.class, KubernetesDiscoveryPropertiesAutoConfiguration.class })
 public class KubernetesCatalogWatchAutoConfiguration {
 
 	@Bean
 	@ConditionalOnMissingBean
-	@ConditionalOnProperty(name = "spring.cloud.kubernetes.discovery.catalog-services-watch.enabled",
-			matchIfMissing = true)
 	public KubernetesCatalogWatch kubernetesCatalogWatch(KubernetesClient client,
-			KubernetesDiscoveryProperties properties) {
-		return new KubernetesCatalogWatch(client, properties);
+			KubernetesDiscoveryProperties properties, Environment environment) {
+		return new KubernetesCatalogWatch(client, properties, new KubernetesNamespaceProvider(environment));
 	}
 
 }

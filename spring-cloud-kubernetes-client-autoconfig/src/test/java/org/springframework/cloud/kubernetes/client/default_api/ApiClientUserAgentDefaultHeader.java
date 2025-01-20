@@ -36,8 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * itself as the default apiClient. This is to avoid overwriting the user's
  * defaultApiClient if they include this project.
  *
- * kubernetes informer is disabled because KubernetesInformerAutoConfiguration creates a
- * defaultApiClient that will be autowired instead of the ApiClient created in
+ * kubernetes informer is disabled because KubernetesClientInformerAutoConfiguration
+ * creates a defaultApiClient that will be autowired instead of the ApiClient created in
  * KubernetesClientAutoConfiguration
  */
 @SpringBootTest(classes = App.class,
@@ -53,7 +53,7 @@ class ApiClientUserAgentDefaultHeader {
 		Request.Builder builder = new Request.Builder();
 		apiClient.processHeaderParams(Collections.emptyMap(), builder);
 		assertThat(builder.url(new URL("http://example.com")).build().headers().get("User-Agent"))
-				.isEqualTo("Spring-Cloud-Kubernetes-Application");
+			.isEqualTo("Spring-Cloud-Kubernetes-Application");
 	}
 
 }

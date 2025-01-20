@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.kubernetes.client.KubernetesClientUtils;
@@ -70,7 +71,10 @@ abstract class ConfigRetryEnabled {
 
 		clientUtilsMock = mockStatic(KubernetesClientUtils.class);
 		clientUtilsMock.when(KubernetesClientUtils::kubernetesApiClient)
-				.thenReturn(new ClientBuilder().setBasePath(wireMockServer.baseUrl()).build());
+			.thenReturn(new ClientBuilder().setBasePath(wireMockServer.baseUrl()).build());
+		clientUtilsMock
+			.when(() -> KubernetesClientUtils.getApplicationNamespace(Mockito.any(), Mockito.any(), Mockito.any()))
+			.thenReturn("default");
 		stubConfigMapAndSecretsDefaults();
 	}
 
@@ -102,12 +106,12 @@ abstract class ConfigRetryEnabled {
 		data.put("some.number", "0");
 
 		V1ConfigMapList configMapList = new V1ConfigMapList()
-				.addItemsItem(new V1ConfigMap().metadata(new V1ObjectMeta().name("application")).data(data));
+			.addItemsItem(new V1ConfigMap().metadata(new V1ObjectMeta().name("application")).data(data));
 
 		stubFor(get(API).willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(configMapList))));
 
 		PropertySource<?> propertySource = Assertions
-				.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
+			.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
 
 		// verify locate is called only once
 		WireMock.verify(1, getRequestedFor(urlEqualTo(API)));
@@ -125,24 +129,31 @@ abstract class ConfigRetryEnabled {
 		data.put("some.number", "0");
 
 		V1ConfigMapList configMapList = new V1ConfigMapList()
-				.addItemsItem(new V1ConfigMap().metadata(new V1ObjectMeta().name("application")).data(data));
+			.addItemsItem(new V1ConfigMap().metadata(new V1ObjectMeta().name("application")).data(data));
 
 		// fail 3 times
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs(STARTED)
-				.willReturn(aResponse().withStatus(500)).willSetStateTo("Failed once"));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs(STARTED)
+			.willReturn(aResponse().withStatus(500))
+			.willSetStateTo("Failed once"));
 
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs("Failed once")
-				.willReturn(aResponse().withStatus(500)).willSetStateTo("Failed twice"));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs("Failed once")
+			.willReturn(aResponse().withStatus(500))
+			.willSetStateTo("Failed twice"));
 
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs("Failed twice")
-				.willReturn(aResponse().withStatus(500)).willSetStateTo("Failed thrice"));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs("Failed twice")
+			.willReturn(aResponse().withStatus(500))
+			.willSetStateTo("Failed thrice"));
 
 		// then succeed
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs("Failed thrice")
-				.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(configMapList))));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs("Failed thrice")
+			.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(configMapList))));
 
 		PropertySource<?> propertySource = Assertions
-				.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
+			.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
 
 		// verify the request was retried 4 times, 5 total request
 		WireMock.verify(5, getRequestedFor(urlEqualTo(API)));
@@ -159,7 +170,8 @@ abstract class ConfigRetryEnabled {
 		stubFor(get(API).willReturn(aResponse().withStatus(500).withBody("Internal Server Error")));
 
 		assertThatThrownBy(() -> propertySourceLocator.locate(new MockEnvironment()))
-				.isInstanceOf(IllegalStateException.class).hasMessage("Internal Server Error");
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("Internal Server Error");
 
 		// verify the request was retried 5 times
 		WireMock.verify(5, getRequestedFor(urlEqualTo(API)));

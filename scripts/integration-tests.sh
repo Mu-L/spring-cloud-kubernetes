@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
-./mvnw clean install -B -Pdocs ${@}
-cd spring-cloud-kubernetes-integration-tests
-./run.sh ${@}
+if [ -f "~/.testcontainers.properties" ]; then
+    rm ~/.testcontainers.properties
+fi
+echo 'testcontainers.reuse.enable=true' > ~/.testcontainers.properties
 
+./mvnw clean install -B -Pdocs ${@}
+
+rm ~/.testcontainers.properties
+docker kill $(docker ps -q)

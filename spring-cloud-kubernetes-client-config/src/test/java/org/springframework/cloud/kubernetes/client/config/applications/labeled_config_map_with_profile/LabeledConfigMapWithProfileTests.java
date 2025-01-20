@@ -26,8 +26,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
- * Stud data is in
- * {@link org.springframework.cloud.kubernetes.client.config.boostrap.stubs.LabeledConfigMapWithProfileConfigurationStub}
+ * Stub data is in
+ * {@link org.springframework.cloud.kubernetes.client.config.bootstrap.stubs.LabeledConfigMapWithProfileConfigurationStub}
  *
  * @author wind57
  */
@@ -55,21 +55,32 @@ abstract class LabeledConfigMapWithProfileTests {
 	 */
 	@Test
 	void testBlue() {
-		this.webClient.get().uri("/labeled-configmap/profile/blue").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("1"));
+		this.webClient.get()
+			.uri("/labeled-configmap/profile/blue")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("1"));
 	}
 
 	/**
 	 * <pre>
-	 *   this one is taken from : "green-configmap.green-configmap-k8s.green-configmap-prod".
-	 *   We find "green-configmap" by labels, also "green-configmap-k8s" and "green-configmap-prod" exists,
-	 *   because "includeProfileSpecificSources=true" is set.
+	 *   this one is taken from : ""green-configmap.green-configmap-k8s.green-configmap-prod.green-purple-configmap.green-purple-configmap-k8s"".
+	 *   We find "green-configmap" by labels, also "green-configmap-k8s", "green-configmap-prod" exists,
+	 *   because "includeProfileSpecificSources=true" is set. Also "green-purple-configmap" and "green-purple-configmap-k8s"
+	 *   are found.
 	 * </pre>
 	 */
 	@Test
 	void testGreen() {
-		this.webClient.get().uri("/labeled-configmap/profile/green").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("2#6#7"));
+		this.webClient.get()
+			.uri("/labeled-configmap/profile/green")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("2#6#7#eight-ish"));
 	}
 
 }

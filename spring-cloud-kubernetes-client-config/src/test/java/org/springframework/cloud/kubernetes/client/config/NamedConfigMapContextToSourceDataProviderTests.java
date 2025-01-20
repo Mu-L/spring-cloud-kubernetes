@@ -34,7 +34,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.cloud.kubernetes.commons.config.ConfigUtils;
 import org.springframework.cloud.kubernetes.commons.config.NamedConfigMapNormalizedSource;
 import org.springframework.cloud.kubernetes.commons.config.NormalizedSource;
@@ -49,6 +52,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 /**
  * @author wind57
  */
+@ExtendWith(OutputCaptureExtension.class)
 class NamedConfigMapContextToSourceDataProviderTests {
 
 	private static final String NAMESPACE = "default";
@@ -78,6 +82,7 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	@AfterEach
 	void afterEach() {
 		WireMock.reset();
+		new KubernetesClientConfigMapsCache().discardAll();
 	}
 
 	/**
@@ -89,8 +94,9 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	@Test
 	void noMatch() {
 		V1ConfigMap redConfigMap = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(COLOR_REALLY_RED).build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
+			.addToData(COLOR_REALLY_RED)
+			.build();
 
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(redConfigMap);
 		stubCall(configMapList);
@@ -118,8 +124,9 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	void match() {
 
 		V1ConfigMap configMap = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(COLOR_REALLY_RED).build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
+			.addToData(COLOR_REALLY_RED)
+			.build();
 
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(configMap);
 		stubCall(configMapList);
@@ -148,28 +155,31 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	void matchIncludeSingleProfile() {
 
 		V1ConfigMap red = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(COLOR_REALLY_RED).build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
+			.addToData(COLOR_REALLY_RED)
+			.build();
 
 		V1ConfigMap redWithProfile = new V1ConfigMapBuilder().withMetadata(
 				new V1ObjectMetaBuilder().withName(RED_WITH_PROFILE_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(TASTE_MANGO).build();
+			.addToData(TASTE_MANGO)
+			.build();
 
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(red).addItemsItem(redWithProfile);
 		stubCall(configMapList);
 		CoreV1Api api = new CoreV1Api();
 
-		NormalizedSource source = new NamedConfigMapNormalizedSource(RED_CONFIG_MAP_NAME, NAMESPACE, true, true);
+		NormalizedSource source = new NamedConfigMapNormalizedSource(RED_CONFIG_MAP_NAME, NAMESPACE, true,
+				ConfigUtils.Prefix.DEFAULT, true, true);
 		MockEnvironment environment = new MockEnvironment();
 		environment.setActiveProfiles("with-profile");
-		KubernetesClientConfigContext context = new KubernetesClientConfigContext(api, source, NAMESPACE, environment);
+		KubernetesClientConfigContext context = new KubernetesClientConfigContext(api, source, NAMESPACE, environment,
+				false);
 
 		KubernetesClientContextToSourceData data = new NamedConfigMapContextToSourceDataProvider().get();
 		SourceData sourceData = data.apply(context);
 
-		Assertions.assertEquals(sourceData.sourceName(), "configmap.red.red-with-profile.default");
-		Assertions.assertEquals(sourceData.sourceData().size(), 2);
-		Assertions.assertEquals(sourceData.sourceData().get("color"), "really-red");
+		Assertions.assertEquals(sourceData.sourceName(), "configmap.red.red-with-profile.default.with-profile");
+		Assertions.assertEquals(sourceData.sourceData().size(), 1);
 		Assertions.assertEquals(sourceData.sourceData().get("taste"), "mango");
 
 	}
@@ -187,12 +197,14 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	void matchIncludeSingleProfileWithPrefix() {
 
 		V1ConfigMap red = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(COLOR_REALLY_RED).build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
+			.addToData(COLOR_REALLY_RED)
+			.build();
 
 		V1ConfigMap redWithTaste = new V1ConfigMapBuilder().withMetadata(
 				new V1ObjectMetaBuilder().withName(RED_WITH_PROFILE_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(TASTE_MANGO).build();
+			.addToData(TASTE_MANGO)
+			.build();
 
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(red).addItemsItem(redWithTaste);
 		stubCall(configMapList);
@@ -227,20 +239,28 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	void matchIncludeTwoProfilesWithPrefix() {
 
 		V1ConfigMap red = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(COLOR_REALLY_RED).build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
+			.addToData(COLOR_REALLY_RED)
+			.build();
 
 		V1ConfigMap redWithTaste = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME + "-with-taste")
-						.withNamespace(NAMESPACE).withResourceVersion("1").build())
-				.addToData(TASTE_MANGO).build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME + "-with-taste")
+				.withNamespace(NAMESPACE)
+				.withResourceVersion("1")
+				.build())
+			.addToData(TASTE_MANGO)
+			.build();
 
-		V1ConfigMap redWithShape = new V1ConfigMapBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withName(RED_CONFIG_MAP_NAME + "-with-shape").withNamespace(NAMESPACE).build())
-				.addToData("shape", "round").build();
+		V1ConfigMap redWithShape = new V1ConfigMapBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME + "-with-shape")
+				.withNamespace(NAMESPACE)
+				.build())
+			.addToData("shape", "round")
+			.build();
 
-		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(red).addItemsItem(redWithTaste)
-				.addItemsItem(redWithShape);
+		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(red)
+			.addItemsItem(redWithTaste)
+			.addItemsItem(redWithShape);
 
 		stubCall(configMapList);
 		CoreV1Api api = new CoreV1Api();
@@ -273,8 +293,9 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	void matchWithName() {
 
 		V1ConfigMap red = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName("application").withNamespace(NAMESPACE).build())
-				.addToData("color", "red").build();
+			.withMetadata(new V1ObjectMetaBuilder().withName("application").withNamespace(NAMESPACE).build())
+			.addToData("color", "red")
+			.build();
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(red);
 
 		stubCall(configMapList);
@@ -303,8 +324,9 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	void namespaceMatch() {
 
 		V1ConfigMap configMap = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData(COLOR_REALLY_RED).build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
+			.addToData(COLOR_REALLY_RED)
+			.build();
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(configMap);
 
 		stubCall(configMapList);
@@ -330,8 +352,9 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	@Test
 	void testSingleYaml() {
 		V1ConfigMap singleYaml = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
-				.addToData("single.yaml", "key: value").build();
+			.withMetadata(new V1ObjectMetaBuilder().withName(RED_CONFIG_MAP_NAME).withNamespace(NAMESPACE).build())
+			.addToData("single.yaml", "key: value")
+			.build();
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(singleYaml);
 
 		stubCall(configMapList);
@@ -359,8 +382,9 @@ class NamedConfigMapContextToSourceDataProviderTests {
 	@Test
 	void testCorrectNameWithProfile() {
 		V1ConfigMap one = new V1ConfigMapBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withName("one").withNamespace(NAMESPACE).build())
-				.addToData("key", "value").build();
+			.withMetadata(new V1ObjectMetaBuilder().withName("one").withNamespace(NAMESPACE).build())
+			.addToData("key", "value")
+			.build();
 		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(one);
 
 		stubCall(configMapList);
@@ -379,9 +403,66 @@ class NamedConfigMapContextToSourceDataProviderTests {
 		Assertions.assertEquals(sourceData.sourceData(), Map.of("key", "value"));
 	}
 
+	/**
+	 * <pre>
+	 *     - one configmap is deployed with name "red"
+	 *     - one configmap is deployed with name "green"
+	 *
+	 *     - we first search for "red" and find it, and it is retrieved from the cluster via the client.
+	 * 	   - we then search for the "green" one, and it is retrieved from the cache this time.
+	 * </pre>
+	 */
+	@Test
+	void cache(CapturedOutput output) {
+		V1ConfigMap red = new V1ConfigMapBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withName("red").withNamespace(NAMESPACE).build())
+			.addToData("color", "red")
+			.build();
+
+		V1ConfigMap green = new V1ConfigMapBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withName("green").withNamespace(NAMESPACE).build())
+			.addToData("color", "green")
+			.build();
+
+		V1ConfigMapList configMapList = new V1ConfigMapList().addItemsItem(red).addItemsItem(green);
+
+		stubCall(configMapList);
+		CoreV1Api api = new CoreV1Api();
+
+		MockEnvironment environment = new MockEnvironment();
+
+		NormalizedSource redSource = new NamedConfigMapNormalizedSource("red", NAMESPACE, true, false);
+		KubernetesClientConfigContext redContext = new KubernetesClientConfigContext(api, redSource, NAMESPACE,
+				environment);
+		KubernetesClientContextToSourceData redData = new NamedConfigMapContextToSourceDataProvider().get();
+		SourceData redSourceData = redData.apply(redContext);
+
+		Assertions.assertEquals(redSourceData.sourceName(), "configmap.red.default");
+		Assertions.assertEquals(redSourceData.sourceData(), Map.of("color", "red"));
+		Assertions.assertTrue(output.getAll().contains("Loaded all config maps in namespace '" + NAMESPACE + "'"));
+
+		NormalizedSource greenSource = new NamedConfigMapNormalizedSource("green", NAMESPACE, true, true);
+		KubernetesClientConfigContext greenContext = new KubernetesClientConfigContext(api, greenSource, NAMESPACE,
+				environment);
+		KubernetesClientContextToSourceData greenData = new NamedConfigMapContextToSourceDataProvider().get();
+		SourceData greenSourceData = greenData.apply(greenContext);
+
+		Assertions.assertEquals(greenSourceData.sourceName(), "configmap.green.default");
+		Assertions.assertEquals(greenSourceData.sourceData(), Map.of("color", "green"));
+
+		// meaning there is a single entry with such a log statement
+		String[] out = output.getAll().split("Loaded all config maps in namespace");
+		Assertions.assertEquals(out.length, 2);
+
+		// meaning that the second read was done from the cache
+		out = output.getAll().split("Loaded \\(from cache\\) all config maps in namespace");
+		Assertions.assertEquals(out.length, 2);
+
+	}
+
 	private void stubCall(V1ConfigMapList list) {
 		stubFor(get("/api/v1/namespaces/default/configmaps")
-				.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(list))));
+			.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(list))));
 	}
 
 }

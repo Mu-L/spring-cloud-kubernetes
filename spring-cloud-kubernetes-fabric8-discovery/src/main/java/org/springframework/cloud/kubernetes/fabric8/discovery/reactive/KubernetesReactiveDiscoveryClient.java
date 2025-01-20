@@ -45,20 +45,20 @@ public class KubernetesReactiveDiscoveryClient implements ReactiveDiscoveryClien
 
 	@Override
 	public String description() {
-		return "Kubernetes Reactive Discovery Client";
+		return "Fabric8 Kubernetes Reactive Discovery Client";
 	}
 
 	@Override
 	public Flux<ServiceInstance> getInstances(String serviceId) {
 		Assert.notNull(serviceId, "[Assertion failed] - the object argument must not be null");
 		return Flux.defer(() -> Flux.fromIterable(kubernetesDiscoveryClient.getInstances(serviceId)))
-				.subscribeOn(Schedulers.boundedElastic());
+			.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
 	public Flux<String> getServices() {
 		return Flux.defer(() -> Flux.fromIterable(kubernetesDiscoveryClient.getServices()))
-				.subscribeOn(Schedulers.boundedElastic());
+			.subscribeOn(Schedulers.boundedElastic());
 	}
 
 }

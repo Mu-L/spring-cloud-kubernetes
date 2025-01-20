@@ -29,17 +29,50 @@ import org.springframework.boot.convert.DurationUnit;
 public class ConfigurationWatcherConfigurationProperties {
 
 	/**
+	 * AMQP profile name.
+	 */
+	public static final String AMQP = "bus-amqp";
+
+	/**
+	 * Kafka profile name.
+	 */
+	public static final String KAFKA = "bus-kafka";
+
+	/**
+	 * label to enable refresh/restart when using configmaps.
+	 */
+	public static final String CONFIG_MAP_LABEL = "spring.cloud.kubernetes.config";
+
+	/**
+	 * label to enable refresh/restart when using secrets.
+	 */
+	public static final String SECRET_LABEL = "spring.cloud.kubernetes.secret";
+
+	/**
+	 * annotation name to enable refresh/restart for specific apps when using configmaps.
+	 */
+	public static final String CONFIG_MAP_APPS_ANNOTATION = "spring.cloud.kubernetes.configmap.apps";
+
+	/**
+	 * annotation name to enable refresh/restart for specific apps when using secrets.
+	 */
+	public static final String SECRET_APPS_ANNOTATION = "spring.cloud.kubernetes.secret.apps";
+
+	/**
+	 * Annotation key for actuator port and path.
+	 */
+	public static final String ANNOTATION_KEY = "boot.spring.io/actuator";
+
+	/**
 	 * Amount of time to delay the posting of the event to allow the app volume to update
 	 * data.
 	 */
 	@DurationUnit(ChronoUnit.MILLIS)
 	private Duration refreshDelay = Duration.ofMillis(120000);
 
+	private RefreshStrategy refreshStrategy = RefreshStrategy.REFRESH;
+
 	private int threadPoolSize = 1;
-
-	private String configLabel = "spring.cloud.kubernetes.config";
-
-	private String secretLabel = "spring.cloud.kubernetes.secret";
 
 	private String actuatorPath = "/actuator";
 
@@ -68,22 +101,6 @@ public class ConfigurationWatcherConfigurationProperties {
 		this.actuatorPort = actuatorPort;
 	}
 
-	public String getSecretLabel() {
-		return secretLabel;
-	}
-
-	public void setSecretLabel(String secretLabel) {
-		this.secretLabel = secretLabel;
-	}
-
-	public String getConfigLabel() {
-		return configLabel;
-	}
-
-	public void setConfigLabel(String configLabel) {
-		this.configLabel = configLabel;
-	}
-
 	public Duration getRefreshDelay() {
 		return refreshDelay;
 	}
@@ -98,6 +115,30 @@ public class ConfigurationWatcherConfigurationProperties {
 
 	public void setThreadPoolSize(int threadPoolSize) {
 		this.threadPoolSize = threadPoolSize;
+	}
+
+	public RefreshStrategy getRefreshStrategy() {
+		return refreshStrategy;
+	}
+
+	public void setRefreshStrategy(RefreshStrategy refreshStrategy) {
+		this.refreshStrategy = refreshStrategy;
+	}
+
+	public enum RefreshStrategy {
+
+		/**
+		 * Call the Actuator refresh endpoint or send a refresh event over Spring Cloud
+		 * Bus.
+		 */
+		REFRESH,
+
+		/**
+		 * Call the Actuator shutdown endpoint or send a shutdown event over Spring Cloud
+		 * Bus.
+		 */
+		SHUTDOWN
+
 	}
 
 }

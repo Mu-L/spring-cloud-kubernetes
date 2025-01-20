@@ -24,10 +24,9 @@ import io.kubernetes.client.openapi.models.V1EndpointsListBuilder;
 import io.kubernetes.client.openapi.models.V1ListMetaBuilder;
 import io.kubernetes.client.openapi.models.V1ServiceListBuilder;
 import io.kubernetes.client.util.ClientBuilder;
-import org.junit.Test;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -36,7 +35,6 @@ import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.cloud.client.discovery.composite.CompositeDiscoveryClient;
 import org.springframework.cloud.kubernetes.commons.KubernetesNamespaceProvider;
 import org.springframework.context.annotation.Bean;
-import org.springframework.test.context.junit4.SpringRunner;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -46,60 +44,63 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-@RunWith(SpringRunner.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
 		properties = { "spring.main.cloud-platform=KUBERNETES",
 				"spring.cloud.kubernetes.discovery.cacheLoadingTimeoutSeconds=5", "spring.cloud.config.enabled=false",
 				"spring.cloud.kubernetes.discovery.waitCacheReady=false" })
-public class KubernetesDiscoveryClientAutoConfigurationTests {
+class KubernetesDiscoveryClientAutoConfigurationTests {
 
-	@Autowired(required = false)
+	@Autowired
 	private DiscoveryClient discoveryClient;
 
-	public static WireMockServer wireMockServer;
+	private static WireMockServer wireMockServer;
 
 	@AfterAll
-	public static void after() {
+	static void after() {
 		wireMockServer.stop();
 	}
 
 	@AfterEach
-	public void afterEach() {
+	void afterEach() {
 		WireMock.reset();
 	}
 
 	@Test
-	public void kubernetesDiscoveryClientCreated() {
+	void kubernetesDiscoveryClientCreated() {
 		assertThat(this.discoveryClient).isNotNull().isInstanceOf(CompositeDiscoveryClient.class);
 
 		CompositeDiscoveryClient composite = (CompositeDiscoveryClient) this.discoveryClient;
-		assertThat(composite.getDiscoveryClients().stream()
-				.anyMatch(dc -> dc instanceof KubernetesInformerDiscoveryClient)).isTrue();
+		assertThat(composite.getDiscoveryClients()
+			.stream()
+			.anyMatch(dc -> dc instanceof KubernetesInformerDiscoveryClient)).isTrue();
 	}
 
 	@SpringBootApplication
 	protected static class TestConfig {
 
 		@Bean
-		public KubernetesNamespaceProvider kubernetesNamespaceProvider() {
+		KubernetesNamespaceProvider kubernetesNamespaceProvider() {
 			KubernetesNamespaceProvider provider = mock(KubernetesNamespaceProvider.class);
 			when(provider.getNamespace()).thenReturn("test");
 			return provider;
 		}
 
 		@Bean
-		public ApiClient apiClient() {
+		ApiClient apiClient() {
 			wireMockServer = new WireMockServer(options().dynamicPort());
 			wireMockServer.start();
 			WireMock.configureFor(wireMockServer.port());
 			stubFor(get("/api/v1/namespaces/test/endpoints?resourceVersion=0&watch=false")
-					.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(new V1EndpointsListBuilder()
-							.withMetadata(new V1ListMetaBuilder().withNewResourceVersion("0").build()).build()))));
+				.willReturn(aResponse().withStatus(200)
+					.withBody(new JSON().serialize(new V1EndpointsListBuilder()
+						.withMetadata(new V1ListMetaBuilder().withResourceVersion("0").build())
+						.build()))));
 			stubFor(get("/api/v1/namespaces/test/services?resourceVersion=0&watch=false")
-					.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(new V1ServiceListBuilder()
-							.withMetadata(new V1ListMetaBuilder().withNewResourceVersion("0").build()).build()))));
-			ApiClient apiClient = new ClientBuilder().setBasePath(wireMockServer.baseUrl()).build();
-			return apiClient;
+				.willReturn(aResponse().withStatus(200)
+					.withBody(new JSON().serialize(new V1ServiceListBuilder()
+						.withMetadata(new V1ListMetaBuilder().withResourceVersion("0").build())
+						.build()))));
+			return new ClientBuilder().setBasePath(wireMockServer.baseUrl()).build();
 		}
 
 	}

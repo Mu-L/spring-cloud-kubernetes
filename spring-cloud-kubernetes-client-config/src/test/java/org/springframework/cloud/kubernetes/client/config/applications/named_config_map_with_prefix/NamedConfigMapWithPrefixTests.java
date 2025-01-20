@@ -27,7 +27,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
  * The stub data for this test is in :
- * {@link org.springframework.cloud.kubernetes.client.config.boostrap.stubs.NamedConfigMapWithPrefixConfigurationStub}
+ * {@link org.springframework.cloud.kubernetes.client.config.bootstrap.stubs.NamedConfigMapWithPrefixConfigurationStub}
  *
  * @author wind57
  */
@@ -57,8 +57,13 @@ abstract class NamedConfigMapWithPrefixTests {
 	 */
 	@Test
 	void testOne() {
-		this.webClient.get().uri("/named-configmap/prefix/one").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("one"));
+		this.webClient.get()
+			.uri("/named-configmap/prefix/one")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("one"));
 	}
 
 	/**
@@ -72,8 +77,13 @@ abstract class NamedConfigMapWithPrefixTests {
 	 */
 	@Test
 	void testTwo() {
-		this.webClient.get().uri("/named-configmap/prefix/two").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("two"));
+		this.webClient.get()
+			.uri("/named-configmap/prefix/two")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("two"));
 	}
 
 	/**
@@ -87,8 +97,13 @@ abstract class NamedConfigMapWithPrefixTests {
 	 */
 	@Test
 	void testThree() {
-		this.webClient.get().uri("/named-configmap/prefix/three").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("three"));
+		this.webClient.get()
+			.uri("/named-configmap/prefix/three")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("three"));
 	}
 
 }

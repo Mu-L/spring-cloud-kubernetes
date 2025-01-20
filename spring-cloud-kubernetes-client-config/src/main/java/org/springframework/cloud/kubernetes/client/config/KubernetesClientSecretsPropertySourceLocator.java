@@ -21,16 +21,18 @@ import io.kubernetes.client.openapi.apis.CoreV1Api;
 import org.springframework.cloud.kubernetes.commons.KubernetesNamespaceProvider;
 import org.springframework.cloud.kubernetes.commons.config.NormalizedSource;
 import org.springframework.cloud.kubernetes.commons.config.SecretsConfigProperties;
+import org.springframework.cloud.kubernetes.commons.config.SecretsPropertySource;
 import org.springframework.cloud.kubernetes.commons.config.SecretsPropertySourceLocator;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.env.ConfigurableEnvironment;
-import org.springframework.core.env.MapPropertySource;
 
-import static org.springframework.cloud.kubernetes.client.config.KubernetesClientConfigUtils.getApplicationNamespace;
+import static org.springframework.cloud.kubernetes.client.KubernetesClientUtils.getApplicationNamespace;
 
 /**
  * @author Ryan Baxter
  * @author Isik Erhan
  */
+@Order(1)
 public class KubernetesClientSecretsPropertySourceLocator extends SecretsPropertySourceLocator {
 
 	private final CoreV1Api coreV1Api;
@@ -39,13 +41,13 @@ public class KubernetesClientSecretsPropertySourceLocator extends SecretsPropert
 
 	public KubernetesClientSecretsPropertySourceLocator(CoreV1Api coreV1Api,
 			KubernetesNamespaceProvider kubernetesNamespaceProvider, SecretsConfigProperties secretsConfigProperties) {
-		super(secretsConfigProperties);
+		super(secretsConfigProperties, new KubernetesClientSecretsCache());
 		this.coreV1Api = coreV1Api;
 		this.kubernetesNamespaceProvider = kubernetesNamespaceProvider;
 	}
 
 	@Override
-	protected MapPropertySource getPropertySource(ConfigurableEnvironment environment, NormalizedSource source) {
+	protected SecretsPropertySource getPropertySource(ConfigurableEnvironment environment, NormalizedSource source) {
 
 		String normalizedNamespace = source.namespace().orElse(null);
 		String namespace = getApplicationNamespace(normalizedNamespace, source.target(), kubernetesNamespaceProvider);

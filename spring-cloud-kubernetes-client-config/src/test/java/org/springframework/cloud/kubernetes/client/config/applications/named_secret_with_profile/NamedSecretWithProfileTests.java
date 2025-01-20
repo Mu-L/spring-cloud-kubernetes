@@ -27,7 +27,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
  * The stub data for this test is in :
- * {@link org.springframework.cloud.kubernetes.client.config.boostrap.stubs.NamedSecretWithProfileConfigurationStub}
+ * {@link org.springframework.cloud.kubernetes.client.config.bootstrap.stubs.NamedSecretWithProfileConfigurationStub}
  *
  * @author wind57
  */
@@ -59,8 +59,13 @@ abstract class NamedSecretWithProfileTests {
 	 */
 	@Test
 	void testOne() {
-		this.webClient.get().uri("/named-secret/profile/one").exchange().expectStatus().isOk().expectBody(String.class)
-				.value(Matchers.equalTo("one-from-k8s"));
+		this.webClient.get()
+			.uri("/named-secret/profile/one")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("one-from-k8s"));
 	}
 
 	/**
@@ -77,8 +82,13 @@ abstract class NamedSecretWithProfileTests {
 	 */
 	@Test
 	void testTwo() {
-		this.webClient.get().uri("/named-secret/profile/two").exchange().expectStatus().isOk().expectBody(String.class)
-				.value(Matchers.equalTo("two"));
+		this.webClient.get()
+			.uri("/named-secret/profile/two")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("two"));
 	}
 
 	/**
@@ -94,8 +104,13 @@ abstract class NamedSecretWithProfileTests {
 	 */
 	@Test
 	void testThree() {
-		this.webClient.get().uri("/named-secret/profile/three").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("three-from-k8s"));
+		this.webClient.get()
+			.uri("/named-secret/profile/three")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("three-from-k8s"));
 	}
 
 }

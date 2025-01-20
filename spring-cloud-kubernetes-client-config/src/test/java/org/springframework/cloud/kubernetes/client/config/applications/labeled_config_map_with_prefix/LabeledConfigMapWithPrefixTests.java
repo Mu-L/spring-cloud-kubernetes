@@ -26,8 +26,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
- * Stud data is in
- * {@link org.springframework.cloud.kubernetes.client.config.boostrap.stubs.LabeledConfigMapWithPrefixConfigurationStub}
+ * Stub data is in
+ * {@link org.springframework.cloud.kubernetes.client.config.bootstrap.stubs.LabeledConfigMapWithPrefixConfigurationStub}
  *
  * @author wind57
  */
@@ -57,8 +57,13 @@ abstract class LabeledConfigMapWithPrefixTests {
 	 */
 	@Test
 	void testOne() {
-		this.webClient.get().uri("/labeled-configmap/prefix/one").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("one"));
+		this.webClient.get()
+			.uri("/labeled-configmap/prefix/one")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("one"));
 	}
 
 	/**
@@ -72,8 +77,13 @@ abstract class LabeledConfigMapWithPrefixTests {
 	 */
 	@Test
 	void testTwo() {
-		this.webClient.get().uri("/labeled-configmap/prefix/two").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("two"));
+		this.webClient.get()
+			.uri("/labeled-configmap/prefix/two")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("two"));
 	}
 
 	/**
@@ -89,8 +99,13 @@ abstract class LabeledConfigMapWithPrefixTests {
 	 */
 	@Test
 	void testThree() {
-		this.webClient.get().uri("/labeled-configmap/prefix/three").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("three"));
+		this.webClient.get()
+			.uri("/labeled-configmap/prefix/three")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("three"));
 	}
 
 	/**
@@ -106,8 +121,13 @@ abstract class LabeledConfigMapWithPrefixTests {
 	 */
 	@Test
 	void testFour() {
-		this.webClient.get().uri("/labeled-configmap/prefix/four").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("four"));
+		this.webClient.get()
+			.uri("/labeled-configmap/prefix/four")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("four"));
 	}
 
 }

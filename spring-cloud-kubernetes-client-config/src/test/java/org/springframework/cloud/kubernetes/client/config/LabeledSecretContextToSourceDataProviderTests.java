@@ -37,7 +37,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.cloud.kubernetes.commons.config.ConfigUtils;
 import org.springframework.cloud.kubernetes.commons.config.LabeledSecretNormalizedSource;
 import org.springframework.cloud.kubernetes.commons.config.NormalizedSource;
@@ -52,6 +55,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 /**
  * @author wind57
  */
+@ExtendWith(OutputCaptureExtension.class)
 class LabeledSecretContextToSourceDataProviderTests {
 
 	private static final Map<String, String> LABELS = new LinkedHashMap<>();
@@ -80,6 +84,7 @@ class LabeledSecretContextToSourceDataProviderTests {
 	@AfterEach
 	void afterEach() {
 		WireMock.reset();
+		new KubernetesClientSecretsCache().discardAll();
 	}
 
 	/**
@@ -89,9 +94,12 @@ class LabeledSecretContextToSourceDataProviderTests {
 	void noMatch() {
 
 		V1Secret red = new V1SecretBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withLabels(Collections.singletonMap("color", "red"))
-						.withNamespace(NAMESPACE).withName("red-secret").build())
-				.addToData("color", Base64.getEncoder().encode("really-red".getBytes())).build();
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Collections.singletonMap("color", "red"))
+				.withNamespace(NAMESPACE)
+				.withName("red-secret")
+				.build())
+			.addToData("color", Base64.getEncoder().encode("really-red".getBytes()))
+			.build();
 		V1SecretList secretList = new V1SecretList().addItemsItem(red);
 
 		stubCall(secretList);
@@ -120,7 +128,8 @@ class LabeledSecretContextToSourceDataProviderTests {
 
 		V1Secret red = new V1SecretBuilder().withMetadata(
 				new V1ObjectMetaBuilder().withLabels(LABELS).withNamespace(NAMESPACE).withName("test-secret").build())
-				.addToData("color", "really-red".getBytes()).build();
+			.addToData("color", "really-red".getBytes())
+			.build();
 		V1SecretList secretList = new V1SecretList().addItemsItem(red);
 
 		stubCall(secretList);
@@ -146,11 +155,13 @@ class LabeledSecretContextToSourceDataProviderTests {
 
 		V1Secret one = new V1SecretBuilder().withMetadata(
 				new V1ObjectMetaBuilder().withLabels(RED_LABEL).withNamespace(NAMESPACE).withName("color-one").build())
-				.addToData("colorOne", "really-red-one".getBytes()).build();
+			.addToData("colorOne", "really-red-one".getBytes())
+			.build();
 
 		V1Secret two = new V1SecretBuilder().withMetadata(
 				new V1ObjectMetaBuilder().withLabels(RED_LABEL).withNamespace(NAMESPACE).withName("color-two").build())
-				.addToData("colorTwo", "really-red-two".getBytes()).build();
+			.addToData("colorTwo", "really-red-two".getBytes())
+			.build();
 
 		V1SecretList secretList = new V1SecretList().addItemsItem(one).addItemsItem(two);
 		stubCall(secretList);
@@ -174,7 +185,8 @@ class LabeledSecretContextToSourceDataProviderTests {
 	void namespaceMatch() {
 		V1Secret one = new V1SecretBuilder().withMetadata(
 				new V1ObjectMetaBuilder().withLabels(LABELS).withNamespace(NAMESPACE).withName("test-secret").build())
-				.addToData("color", "really-red".getBytes()).build();
+			.addToData("color", "really-red".getBytes())
+			.build();
 		V1SecretList secretList = new V1SecretList().addItemsItem(one);
 
 		stubCall(secretList);
@@ -200,9 +212,13 @@ class LabeledSecretContextToSourceDataProviderTests {
 	@Test
 	void testWithPrefix() {
 
-		V1Secret one = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
-				.withNamespace(NAMESPACE).withName("blue-secret").build())
-				.addToData("what-color", "blue-color".getBytes()).build();
+		V1Secret one = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
+				.withNamespace(NAMESPACE)
+				.withName("blue-secret")
+				.build())
+			.addToData("what-color", "blue-color".getBytes())
+			.build();
 		V1SecretList secretList = new V1SecretList().addItemsItem(one);
 
 		stubCall(secretList);
@@ -233,13 +249,21 @@ class LabeledSecretContextToSourceDataProviderTests {
 	@Test
 	void testTwoSecretsWithPrefix() {
 
-		V1Secret one = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
-				.withNamespace(NAMESPACE).withName("blue-secret").build()).addToData("first", "blue".getBytes())
-				.build();
+		V1Secret one = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
+				.withNamespace(NAMESPACE)
+				.withName("blue-secret")
+				.build())
+			.addToData("first", "blue".getBytes())
+			.build();
 
-		V1Secret two = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
-				.withNamespace(NAMESPACE).withName("another-blue-secret").build())
-				.addToData("second", "blue".getBytes()).build();
+		V1Secret two = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
+				.withNamespace(NAMESPACE)
+				.withName("another-blue-secret")
+				.build())
+			.addToData("second", "blue".getBytes())
+			.build();
 
 		V1SecretList secretList = new V1SecretList().addItemsItem(one).addItemsItem(two);
 
@@ -284,13 +308,21 @@ class LabeledSecretContextToSourceDataProviderTests {
 	@Test
 	void searchWithLabelsOneSecretFound() {
 
-		V1Secret colorSecret = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("color", "blue")).withNamespace(NAMESPACE).withName("color-secret").build())
-				.addToData("one", "1".getBytes()).build();
+		V1Secret colorSecret = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
+				.withNamespace(NAMESPACE)
+				.withName("color-secret")
+				.build())
+			.addToData("one", "1".getBytes())
+			.build();
 
-		V1Secret shapeSecret = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("shape", "round")).withNamespace(NAMESPACE).withName("shape-secret").build())
-				.addToData("two", "2".getBytes()).build();
+		V1Secret shapeSecret = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("shape", "round"))
+				.withNamespace(NAMESPACE)
+				.withName("shape-secret")
+				.build())
+			.addToData("two", "2".getBytes())
+			.build();
 
 		V1SecretList secretList = new V1SecretList().addItemsItem(colorSecret).addItemsItem(shapeSecret);
 
@@ -320,13 +352,21 @@ class LabeledSecretContextToSourceDataProviderTests {
 	@Test
 	void searchWithLabelsOneSecretFoundAndOneFromProfileFound() {
 
-		V1Secret colorSecret = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("color", "blue")).withNamespace(NAMESPACE).withName("color-secret").build())
-				.addToData("one", "1".getBytes()).build();
+		V1Secret colorSecret = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
+				.withNamespace(NAMESPACE)
+				.withName("color-secret")
+				.build())
+			.addToData("one", "1".getBytes())
+			.build();
 
-		V1Secret shapeSecret = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("color", "red")).withNamespace(NAMESPACE).withName("color-secret-k8s").build())
-				.addToData("two", "2".getBytes()).build();
+		V1Secret shapeSecret = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "red"))
+				.withNamespace(NAMESPACE)
+				.withName("color-secret-k8s")
+				.build())
+			.addToData("two", "2".getBytes())
+			.build();
 
 		V1SecretList secretList = new V1SecretList().addItemsItem(colorSecret).addItemsItem(shapeSecret);
 
@@ -361,29 +401,51 @@ class LabeledSecretContextToSourceDataProviderTests {
 	@Test
 	void searchWithLabelsTwoSecretsFoundAndOneFromProfileFound() {
 
-		V1Secret colorSecret = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("color", "blue")).withNamespace(NAMESPACE).withName("color-secret").build())
-				.addToData("one", "1".getBytes()).build();
+		V1Secret colorSecret = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
+				.withNamespace(NAMESPACE)
+				.withName("color-secret")
+				.build())
+			.addToData("one", "1".getBytes())
+			.build();
 
 		V1Secret shapeSecret = new V1SecretBuilder()
-				.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue", "shape", "round"))
-						.withNamespace(NAMESPACE).withName("shape-secret").build())
-				.addToData("two", "2".getBytes()).build();
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue", "shape", "round"))
+				.withNamespace(NAMESPACE)
+				.withName("shape-secret")
+				.build())
+			.addToData("two", "2".getBytes())
+			.build();
 
-		V1Secret noFit = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("tag", "no-fit")).withNamespace(NAMESPACE).withName("no-fit").build())
-				.addToData("three", "3".getBytes()).build();
+		V1Secret noFit = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("tag", "no-fit"))
+				.withNamespace(NAMESPACE)
+				.withName("no-fit")
+				.build())
+			.addToData("three", "3".getBytes())
+			.build();
 
-		V1Secret colorSecretK8s = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("color", "red")).withNamespace(NAMESPACE).withName("color-secret-k8s").build())
-				.addToData("four", "4".getBytes()).build();
+		V1Secret colorSecretK8s = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "red"))
+				.withNamespace(NAMESPACE)
+				.withName("color-secret-k8s")
+				.build())
+			.addToData("four", "4".getBytes())
+			.build();
 
-		V1Secret shapeSecretK8s = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("shape", "triangle")).withNamespace(NAMESPACE).withName("shape-secret-k8s").build())
-				.addToData("five", "5".getBytes()).build();
+		V1Secret shapeSecretK8s = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("shape", "triangle"))
+				.withNamespace(NAMESPACE)
+				.withName("shape-secret-k8s")
+				.build())
+			.addToData("five", "5".getBytes())
+			.build();
 
-		V1SecretList secretList = new V1SecretList().addItemsItem(colorSecret).addItemsItem(shapeSecret)
-				.addItemsItem(noFit).addItemsItem(colorSecretK8s).addItemsItem(shapeSecretK8s);
+		V1SecretList secretList = new V1SecretList().addItemsItem(colorSecret)
+			.addItemsItem(shapeSecret)
+			.addItemsItem(noFit)
+			.addItemsItem(colorSecretK8s)
+			.addItemsItem(shapeSecretK8s);
 
 		stubCall(secretList);
 		CoreV1Api api = new CoreV1Api();
@@ -417,9 +479,13 @@ class LabeledSecretContextToSourceDataProviderTests {
 	 */
 	@Test
 	void testYaml() {
-		V1Secret colorSecret = new V1SecretBuilder().withMetadata(new V1ObjectMetaBuilder()
-				.withLabels(Map.of("color", "blue")).withNamespace(NAMESPACE).withName("color-secret").build())
-				.addToData("test.yaml", "color: blue".getBytes()).build();
+		V1Secret colorSecret = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "blue"))
+				.withNamespace(NAMESPACE)
+				.withName("color-secret")
+				.build())
+			.addToData("test.yaml", "color: blue".getBytes())
+			.build();
 
 		V1SecretList secretList = new V1SecretList().addItemsItem(colorSecret);
 
@@ -439,9 +505,73 @@ class LabeledSecretContextToSourceDataProviderTests {
 		Assertions.assertEquals(sourceData.sourceName(), "secret.color-secret.default");
 	}
 
+	/**
+	 * <pre>
+	 *     - one secret is deployed with label {"color", "red"}
+	 *     - one secret is deployed with label {"color", "green"}
+	 *
+	 *     - we first search for "red" and find it, and it is retrieved from the cluster via the client.
+	 * 	   - we then search for the "green" one, and it is retrieved from the cache this time.
+	 * </pre>
+	 */
+	@Test
+	void cache(CapturedOutput output) {
+		V1Secret red = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "red"))
+				.withNamespace(NAMESPACE)
+				.withName("red")
+				.build())
+			.addToData("color", "red".getBytes())
+			.build();
+
+		V1Secret green = new V1SecretBuilder()
+			.withMetadata(new V1ObjectMetaBuilder().withLabels(Map.of("color", "green"))
+				.withNamespace(NAMESPACE)
+				.withName("green")
+				.build())
+			.addToData("color", "green".getBytes())
+			.build();
+
+		V1SecretList secretList = new V1SecretList().addItemsItem(red).addItemsItem(green);
+
+		stubCall(secretList);
+		CoreV1Api api = new CoreV1Api();
+
+		NormalizedSource redSource = new LabeledSecretNormalizedSource(NAMESPACE, Map.of("color", "red"), false,
+				ConfigUtils.Prefix.DEFAULT, false);
+		KubernetesClientConfigContext redContext = new KubernetesClientConfigContext(api, redSource, NAMESPACE,
+				new MockEnvironment());
+		KubernetesClientContextToSourceData redData = new LabeledSecretContextToSourceDataProvider().get();
+		SourceData redSourceData = redData.apply(redContext);
+
+		Assertions.assertEquals(redSourceData.sourceData().size(), 1);
+		Assertions.assertEquals(redSourceData.sourceData().get("color"), "red");
+		Assertions.assertEquals(redSourceData.sourceName(), "secret.red.default");
+		Assertions.assertTrue(output.getAll().contains("Loaded all secrets in namespace '" + NAMESPACE + "'"));
+
+		NormalizedSource greenSource = new LabeledSecretNormalizedSource(NAMESPACE, Map.of("color", "green"), false,
+				ConfigUtils.Prefix.DEFAULT, false);
+		KubernetesClientConfigContext greenContext = new KubernetesClientConfigContext(api, greenSource, NAMESPACE,
+				new MockEnvironment());
+		KubernetesClientContextToSourceData greenData = new LabeledSecretContextToSourceDataProvider().get();
+		SourceData greenSourceData = greenData.apply(greenContext);
+
+		Assertions.assertEquals(greenSourceData.sourceData().size(), 1);
+		Assertions.assertEquals(greenSourceData.sourceData().get("color"), "green");
+		Assertions.assertEquals(greenSourceData.sourceName(), "secret.green.default");
+
+		// meaning there is a single entry with such a log statement
+		String[] out = output.getAll().split("Loaded all secrets in namespace");
+		Assertions.assertEquals(out.length, 2);
+
+		// meaning that the second read was done from the cache
+		out = output.getAll().split("Loaded \\(from cache\\) all secrets in namespace");
+		Assertions.assertEquals(out.length, 2);
+	}
+
 	private void stubCall(V1SecretList list) {
 		stubFor(get("/api/v1/namespaces/default/secrets")
-				.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(list))));
+			.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(list))));
 	}
 
 }

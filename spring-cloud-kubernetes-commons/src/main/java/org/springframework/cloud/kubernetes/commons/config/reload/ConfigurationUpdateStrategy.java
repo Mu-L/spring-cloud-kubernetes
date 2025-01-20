@@ -24,28 +24,23 @@ import java.util.Objects;
  *
  * @author Nicola Ferraro
  */
-public class ConfigurationUpdateStrategy {
+public record ConfigurationUpdateStrategy(String name, Runnable reloadProcedure) {
 
-	private final String name;
+	/**
+	 * Strategy that does nothing.
+	 */
+	public static final ConfigurationUpdateStrategy NOOP = new ConfigurationUpdateStrategy("no-op", () -> {
 
-	private final Runnable reloadProcedure;
+	});
 
 	public ConfigurationUpdateStrategy(String name, Runnable reloadProcedure) {
 		this.name = Objects.requireNonNull(name, "name cannot be null");
 		this.reloadProcedure = Objects.requireNonNull(reloadProcedure, "reloadProcedure cannot be null");
 	}
 
-	public String getName() {
-		return this.name;
-	}
-
-	public void reload() {
-		this.reloadProcedure.run();
-	}
-
 	@Override
 	public String toString() {
-		return "ConfigurationUpdateStrategy{name='" + this.name + "'}";
+		return this.getClass().getSimpleName() + "{name='" + this.name + "'}";
 	}
 
 }

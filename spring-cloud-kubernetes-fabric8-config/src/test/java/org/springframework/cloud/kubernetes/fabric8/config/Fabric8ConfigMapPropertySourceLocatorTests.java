@@ -16,21 +16,27 @@
 
 package org.springframework.cloud.kubernetes.fabric8.config;
 
-import io.fabric8.kubernetes.client.DefaultKubernetesClient;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.server.mock.EnableKubernetesMockClient;
 import io.fabric8.kubernetes.client.server.mock.KubernetesMockServer;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.cloud.kubernetes.commons.KubernetesNamespaceProvider;
 import org.springframework.cloud.kubernetes.commons.config.ConfigMapConfigProperties;
-import org.springframework.cloud.kubernetes.commons.config.ConfigUtils;
-import org.springframework.cloud.kubernetes.commons.config.NamedConfigMapNormalizedSource;
-import org.springframework.cloud.kubernetes.commons.config.NamespaceResolutionFailedException;
-import org.springframework.cloud.kubernetes.commons.config.NormalizedSource;
+import org.springframework.cloud.kubernetes.commons.config.RetryProperties;
+import org.springframework.core.env.CompositePropertySource;
+import org.springframework.core.env.PropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -38,69 +44,60 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * @author Isik Erhan
  */
 @EnableKubernetesMockClient
+@ExtendWith(OutputCaptureExtension.class)
 class Fabric8ConfigMapPropertySourceLocatorTests {
 
-	private KubernetesMockServer mockServer;
+	private static KubernetesMockServer mockServer;
 
-	private KubernetesClient mockClient;
+	private static KubernetesClient mockClient;
 
-	private final DefaultKubernetesClient client = Mockito.mock(DefaultKubernetesClient.class);
-
-	private static final ConfigUtils.Prefix PREFIX = ConfigUtils.findPrefix("prefix", false, false, "irrelevant");
+	@BeforeAll
+	static void beforeAll() {
+		mockClient.getConfiguration().setRequestRetryBackoffLimit(1);
+	}
 
 	@Test
 	void locateShouldThrowExceptionOnFailureWhenFailFastIsEnabled() {
 		String name = "my-config";
 		String namespace = "default";
-		String path = String.format("/api/v1/namespaces/%s/configmaps", namespace);
+		String path = "/api/v1/namespaces/default/configmaps";
 
-		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").once();
+		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").always();
 
-		ConfigMapConfigProperties configMapConfigProperties = new ConfigMapConfigProperties();
-		configMapConfigProperties.setName(name);
-		configMapConfigProperties.setNamespace(namespace);
-		configMapConfigProperties.setFailFast(true);
+		ConfigMapConfigProperties configMapConfigProperties = new ConfigMapConfigProperties(true, List.of(), List.of(),
+				Map.of(), true, name, namespace, false, true, true, RetryProperties.DEFAULT);
 
 		Fabric8ConfigMapPropertySourceLocator locator = new Fabric8ConfigMapPropertySourceLocator(mockClient,
 				configMapConfigProperties, new KubernetesNamespaceProvider(new MockEnvironment()));
 
 		assertThatThrownBy(() -> locator.locate(new MockEnvironment())).isInstanceOf(IllegalStateException.class)
-				.hasMessageContaining("api/v1/namespaces/default/configmaps. Message: Internal Server Error.");
+			.hasMessageContaining("api/v1/namespaces/default/configmaps. Message: Internal Server Error.");
 	}
 
 	@Test
-	void locateShouldNotThrowExceptionOnFailureWhenFailFastIsDisabled() {
+	void locateShouldNotThrowExceptionOnFailureWhenFailFastIsDisabled(CapturedOutput output) {
 		String name = "my-config";
 		String namespace = "default";
-		String path = String.format("/api/v1/namespaces/%s/configmaps/%s", namespace, name);
+		String path = "/api/v1/namespaces/default/configmaps";
 
-		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").once();
+		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").always();
 
-		ConfigMapConfigProperties configMapConfigProperties = new ConfigMapConfigProperties();
-		configMapConfigProperties.setName(name);
-		configMapConfigProperties.setNamespace(namespace);
-		configMapConfigProperties.setFailFast(false);
+		ConfigMapConfigProperties configMapConfigProperties = new ConfigMapConfigProperties(true, List.of(), List.of(),
+				Map.of(), true, name, namespace, false, true, false, RetryProperties.DEFAULT);
 
 		Fabric8ConfigMapPropertySourceLocator locator = new Fabric8ConfigMapPropertySourceLocator(mockClient,
 				configMapConfigProperties, new KubernetesNamespaceProvider(new MockEnvironment()));
 
-		assertThatNoException().isThrownBy(() -> locator.locate(new MockEnvironment()));
-	}
+		List<PropertySource<?>> result = new ArrayList<>();
+		assertThatNoException().isThrownBy(() -> {
+			PropertySource<?> source = locator.locate(new MockEnvironment());
+			result.add(source);
+		});
 
-	@Test
-	void constructorWithoutClientNamespaceMustFail() {
-
-		ConfigMapConfigProperties configMapConfigProperties = new ConfigMapConfigProperties();
-		configMapConfigProperties.setName("name");
-		configMapConfigProperties.setNamespace(null);
-		configMapConfigProperties.setFailFast(false);
-
-		Mockito.when(client.getNamespace()).thenReturn(null);
-		Fabric8ConfigMapPropertySourceLocator source = new Fabric8ConfigMapPropertySourceLocator(client,
-				configMapConfigProperties, new KubernetesNamespaceProvider(new MockEnvironment()));
-		NormalizedSource normalizedSource = new NamedConfigMapNormalizedSource("name", null, false, PREFIX, false);
-		assertThatThrownBy(() -> source.getMapPropertySource(normalizedSource, new MockEnvironment()))
-				.isInstanceOf(NamespaceResolutionFailedException.class);
+		assertThat(result.get(0)).isInstanceOf(CompositePropertySource.class);
+		CompositePropertySource composite = (CompositePropertySource) result.get(0);
+		assertThat(composite.getPropertySources()).hasSize(0);
+		assertThat(output.getOut()).contains("Failed to load source:");
 	}
 
 }

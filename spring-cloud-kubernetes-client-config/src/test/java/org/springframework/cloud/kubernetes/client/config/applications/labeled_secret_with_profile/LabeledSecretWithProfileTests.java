@@ -39,7 +39,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
  * Stubs for this test are in
- * {@link org.springframework.cloud.kubernetes.client.config.boostrap.stubs.LabeledSecretWithProfileConfigurationStub}
+ * {@link org.springframework.cloud.kubernetes.client.config.bootstrap.stubs.LabeledSecretWithProfileConfigurationStub}
  *
  * @author wind57
  */
@@ -67,21 +67,32 @@ abstract class LabeledSecretWithProfileTests {
 	 */
 	@Test
 	void testBlue() {
-		this.webClient.get().uri("/labeled-secret/profile/blue").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("1"));
+		this.webClient.get()
+			.uri("/labeled-secret/profile/blue")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("1"));
 	}
 
 	/**
 	 * <pre>
-	 *   this one is taken from : "green-secret.green-secret-k8s.green-secret-prod".
+	 *   this one is taken from : "green-purple-secret.green-purple-secret-k8s.green-secret.green-secret-k8s.green-secret-prod".
 	 *   We find "green-secret" by labels, also "green-secrets-k8s" and "green-secrets-prod" exists,
-	 *   because "includeProfileSpecificSources=true" is set.
+	 *   because "includeProfileSpecificSources=true" is set. Also "green-purple-secret" and "green-purple-secret-k8s"
+	 * 	 are found.
 	 * </pre>
 	 */
 	@Test
 	void testGreen() {
-		this.webClient.get().uri("/labeled-secret/profile/green").exchange().expectStatus().isOk()
-				.expectBody(String.class).value(Matchers.equalTo("2#6#7"));
+		this.webClient.get()
+			.uri("/labeled-secret/profile/green")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(Matchers.equalTo("2#6#7#eight-ish"));
 	}
 
 }

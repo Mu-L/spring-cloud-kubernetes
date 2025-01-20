@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.cloud</groupId>
 		<artifactId>spring-cloud-kubernetes-integration-tests</artifactId>
-		<version>3.0.0-SNAPSHOT</version>
+		<version>3.3.0-SNAPSHOT</version>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
 
@@ -17,10 +17,6 @@
 			<artifactId>spring-cloud-kubernetes-fabric8-discovery</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>org.springframework.cloud</groupId>
-			<artifactId>spring-cloud-kubernetes-test-support</artifactId>
-		</dependency>
-		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webflux</artifactId>
 		</dependency>
@@ -28,15 +24,18 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
+
 		<dependency>
-			<groupId>com.github.docker-java</groupId>
-			<artifactId>docker-java-core</artifactId>
-			<scope>test</scope>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-kubernetes-test-support</artifactId>
 		</dependency>
+
+		<!-- not bootstrap starter, because we want to be able to disable bootstrap per-test -->
+		<!-- and ConditionalOnBootstrapEnabled has a @ConditionalOnClass on a Marker -->
+		<!-- that is present in bootstrap-starter, but not in this one -->
 		<dependency>
-			<groupId>com.github.docker-java</groupId>
-			<artifactId>docker-java-transport-httpclient5</artifactId>
-			<scope>test</scope>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter</artifactId>
 		</dependency>
 
 	</dependencies>
@@ -53,66 +52,19 @@
 		</resources>
 
 		<plugins>
-			<!-- build image in the 'package' phase, and ignore plain tests -->
-			<!-- via maven-surefire-plugin::skipTests -->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
-				<configuration>
-					<imageName>docker.io/springcloud/${project.artifactId}:${project.version}</imageName>
-					<imageBuilder>paketobuildpacks/builder</imageBuilder>
-				</configuration>
 				<executions>
 					<execution>
-						<phase>package</phase>
-						<goals>
-							<goal>build-image</goal>
-						</goals>
+						<id>build-image</id>
+						<configuration>
+							<skip>true</skip>
+						</configuration>
 					</execution>
 				</executions>
-			</plugin>
-
-			<!-- ignore plain tests (in the 'test' phase), so that we could build the image first, see above -->
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-surefire-plugin</artifactId>
-				<configuration>
-					<skipTests>true</skipTests>
-				</configuration>
-			</plugin>
-
-			<!-- run tests in the 'integration-tests' phase, one that is after 'package' (where we build the image) -->
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-failsafe-plugin</artifactId>
-				<executions>
-					<execution>
-						<goals>
-							<goal>integration-test</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<includes>
-						<include>${testsToRun}</include>
-					</includes>
-				</configuration>
 			</plugin>
 		</plugins>
 	</build>
-
-	<profiles>
-		<profile>
-			<id>imagename</id>
-			<activation>
-				<property>
-					<name>!env.IMAGE</name>
-				</property>
-			</activation>
-			<properties>
-				<env.IMAGE>springcloud/${project.artifactId}:${project.version}</env.IMAGE>
-			</properties>
-		</profile>
-	</profiles>
 
 </project>

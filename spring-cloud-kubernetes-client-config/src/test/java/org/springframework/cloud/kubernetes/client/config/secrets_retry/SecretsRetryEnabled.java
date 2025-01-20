@@ -32,6 +32,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -56,12 +57,11 @@ import static org.mockito.Mockito.spy;
  * @author Isik Erhan
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
-		properties = { "spring.cloud.kubernetes.client.namespace=default",
-				"spring.cloud.kubernetes.secrets.fail-fast=true",
+		properties = { "spring.cloud.kubernetes.secrets.fail-fast=true",
 				"spring.cloud.kubernetes.secrets.retry.max-attempts=5",
 				"spring.cloud.kubernetes.secrets.name=my-secret", "spring.cloud.kubernetes.secrets.enable-api=true",
 				"spring.main.cloud-platform=KUBERNETES", "spring.config.import=kubernetes:" },
-		classes = Application.class)
+		classes = SecretsRetryApplication.class)
 class SecretsRetryEnabled {
 
 	private static final String API = "/api/v1/namespaces/default/secrets";
@@ -78,7 +78,10 @@ class SecretsRetryEnabled {
 
 		clientUtilsMock = mockStatic(KubernetesClientUtils.class);
 		clientUtilsMock.when(KubernetesClientUtils::kubernetesApiClient)
-				.thenReturn(new ClientBuilder().setBasePath(wireMockServer.baseUrl()).build());
+			.thenReturn(new ClientBuilder().setBasePath(wireMockServer.baseUrl()).build());
+		clientUtilsMock
+			.when(() -> KubernetesClientUtils.getApplicationNamespace(Mockito.any(), Mockito.any(), Mockito.any()))
+			.thenReturn("default");
 		stubConfigMapAndSecretsDefaults();
 	}
 
@@ -110,12 +113,12 @@ class SecretsRetryEnabled {
 		data.put("some.sensitive.number", "1".getBytes());
 
 		V1SecretList secretList = new V1SecretList()
-				.addItemsItem(new V1Secret().metadata(new V1ObjectMeta().name("my-secret")).data(data));
+			.addItemsItem(new V1Secret().metadata(new V1ObjectMeta().name("my-secret")).data(data));
 
 		stubFor(get(API).willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(secretList))));
 
 		PropertySource<?> propertySource = Assertions
-				.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
+			.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
 
 		// verify locate is called only once
 		WireMock.verify(1, getRequestedFor(urlEqualTo(API)));
@@ -133,24 +136,31 @@ class SecretsRetryEnabled {
 		data.put("some.sensitive.number", "1".getBytes());
 
 		V1SecretList secretList = new V1SecretList()
-				.addItemsItem(new V1Secret().metadata(new V1ObjectMeta().name("my-secret")).data(data));
+			.addItemsItem(new V1Secret().metadata(new V1ObjectMeta().name("my-secret")).data(data));
 
 		// fail 3 times
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs(STARTED)
-				.willReturn(aResponse().withStatus(500)).willSetStateTo("Failed once"));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs(STARTED)
+			.willReturn(aResponse().withStatus(500))
+			.willSetStateTo("Failed once"));
 
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs("Failed once")
-				.willReturn(aResponse().withStatus(500)).willSetStateTo("Failed twice"));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs("Failed once")
+			.willReturn(aResponse().withStatus(500))
+			.willSetStateTo("Failed twice"));
 
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs("Failed twice")
-				.willReturn(aResponse().withStatus(500)).willSetStateTo("Failed thrice"));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs("Failed twice")
+			.willReturn(aResponse().withStatus(500))
+			.willSetStateTo("Failed thrice"));
 
 		// then succeed
-		stubFor(get(API).inScenario("Retry and Recover").whenScenarioStateIs("Failed thrice")
-				.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(secretList))));
+		stubFor(get(API).inScenario("Retry and Recover")
+			.whenScenarioStateIs("Failed thrice")
+			.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(secretList))));
 
 		PropertySource<?> propertySource = Assertions
-				.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
+			.assertDoesNotThrow(() -> propertySourceLocator.locate(new MockEnvironment()));
 
 		// verify retried 4 times
 		WireMock.verify(4, getRequestedFor(urlEqualTo(API)));
@@ -167,7 +177,8 @@ class SecretsRetryEnabled {
 		stubFor(get(API).willReturn(aResponse().withStatus(500).withBody("Internal Server Error")));
 
 		assertThatThrownBy(() -> propertySourceLocator.locate(new MockEnvironment()))
-				.isInstanceOf(IllegalStateException.class).hasMessage("Internal Server Error");
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("Internal Server Error");
 
 		// verify retried 5 times until failure
 		WireMock.verify(5, getRequestedFor(urlEqualTo(API)));

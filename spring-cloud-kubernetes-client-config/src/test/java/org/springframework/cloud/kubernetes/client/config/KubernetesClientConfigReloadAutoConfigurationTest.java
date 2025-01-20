@@ -18,7 +18,9 @@ package org.springframework.cloud.kubernetes.client.config;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
@@ -30,6 +32,7 @@ import io.kubernetes.client.openapi.models.V1ConfigMapList;
 import io.kubernetes.client.openapi.models.V1ObjectMetaBuilder;
 import io.kubernetes.client.util.ClientBuilder;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,9 +49,15 @@ import org.springframework.cloud.autoconfigure.RefreshAutoConfiguration;
 import org.springframework.cloud.autoconfigure.RefreshEndpointAutoConfiguration;
 import org.springframework.cloud.kubernetes.client.KubernetesClientAutoConfiguration;
 import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientConfigReloadAutoConfiguration;
+import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedConfigMapChangeDetector;
+import org.springframework.cloud.kubernetes.client.config.reload.KubernetesClientEventBasedSecretsChangeDetector;
 import org.springframework.cloud.kubernetes.commons.KubernetesClientProperties;
 import org.springframework.cloud.kubernetes.commons.config.KubernetesBootstrapConfiguration;
 import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadAutoConfiguration;
+import org.springframework.cloud.kubernetes.commons.config.reload.ConfigReloadPropertiesAutoConfiguration;
+import org.springframework.cloud.kubernetes.commons.config.reload.ConfigurationChangeDetector;
+import org.springframework.cloud.kubernetes.commons.config.reload.PollingConfigMapChangeDetector;
+import org.springframework.cloud.kubernetes.commons.config.reload.PollingSecretsChangeDetector;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -77,10 +86,12 @@ public class KubernetesClientConfigReloadAutoConfigurationTest {
 		context = new SpringApplicationBuilder(PropertyPlaceholderAutoConfiguration.class, LocalTestConfig.class,
 				ConfigReloadAutoConfiguration.class, RefreshAutoConfiguration.class, EndpointAutoConfiguration.class,
 				InfoEndpointAutoConfiguration.class, RefreshEndpointAutoConfiguration.class,
-				ConfigurationPropertiesBindingPostProcessor.class,
+				ConfigurationPropertiesBindingPostProcessor.class, ConfigReloadPropertiesAutoConfiguration.class,
 				ConfigurationPropertiesRebinderAutoConfiguration.class, KubernetesClientBootstrapConfiguration.class,
 				KubernetesBootstrapConfiguration.class, KubernetesClientConfigReloadAutoConfiguration.class)
-						.web(org.springframework.boot.WebApplicationType.NONE).properties(envArray).run();
+			.web(org.springframework.boot.WebApplicationType.NONE)
+			.properties(envArray)
+			.run();
 	}
 
 	@BeforeAll
@@ -102,16 +113,17 @@ public class KubernetesClientConfigReloadAutoConfigurationTest {
 	void beforeEach() {
 		V1ConfigMapList TEST_CONFIGMAP = new V1ConfigMapList().addItemsItem(new V1ConfigMapBuilder().withMetadata(
 				new V1ObjectMetaBuilder().withName("test-cm").withNamespace("default").withResourceVersion("1").build())
-				.addToData("app.name", "test").build());
+			.addToData("app.name", "test")
+			.build());
 
 		WireMock.stubFor(get(urlMatching("^/api/v1/namespaces/default/configmaps.*"))
-				.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(TEST_CONFIGMAP))));
+			.willReturn(aResponse().withStatus(200).withBody(new JSON().serialize(TEST_CONFIGMAP))));
 	}
 
 	// 1. watchers
 
 	@Test
-	void kubernetesWatchersWhenKubernetesDisabled() throws Exception {
+	void kubernetesWatchersWhenKubernetesDisabled() {
 		setup();
 		assertThat(context.containsBean("configMapPropertySourceLocator")).isFalse();
 		assertThat(context.containsBean("secretsPropertySourceLocator")).isFalse();
@@ -122,7 +134,7 @@ public class KubernetesClientConfigReloadAutoConfigurationTest {
 	}
 
 	@Test
-	void kubernetesWatchersWhenConfigDisabled() throws Exception {
+	void kubernetesWatchersWhenConfigDisabled() {
 		setup("spring.cloud.kubernetes.config.enabled=false");
 		assertThat(context.containsBean("configMapPropertyChangePollingWatcher")).isFalse();
 		assertThat(context.containsBean("secretsPropertyChangePollingWatcher")).isFalse();
@@ -131,7 +143,7 @@ public class KubernetesClientConfigReloadAutoConfigurationTest {
 	}
 
 	@Test
-	void kubernetesWatchersWhenReloadDisabled() throws Exception {
+	void kubernetesWatchersWhenReloadDisabled() {
 		setup("spring.cloud.kubernetes.reload.enabled=false");
 		assertThat(context.containsBean("configMapPropertyChangePollingWatcher")).isFalse();
 		assertThat(context.containsBean("secretsPropertyChangePollingWatcher")).isFalse();
@@ -140,7 +152,7 @@ public class KubernetesClientConfigReloadAutoConfigurationTest {
 	}
 
 	@Test
-	void kubernetesReloadEnabledButSecretAndConfigDisabled() throws Exception {
+	void kubernetesReloadEnabledButSecretAndConfigDisabled() {
 		setup("spring.cloud.kubernetes.reload.enabled=true", "spring.cloud.kubernetes.config.enabled=false",
 				"spring.cloud.kubernetes.secrets.enabled=false");
 		assertThat(context.containsBean("configMapPropertyChangePollingWatcher")).isFalse();
@@ -149,47 +161,337 @@ public class KubernetesClientConfigReloadAutoConfigurationTest {
 		assertThat(context.containsBean("secretsPropertyChangeEventWatcher")).isFalse();
 	}
 
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is true by default
+	 *
+	 *     - config map event watcher is picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
 	@Test
-	void kubernetesReloadEnabledWithPolling() throws Exception {
-		setup("spring.cloud.kubernetes.reload.enabled=true", "spring.cloud.kubernetes.reload.mode=polling",
+	void reloadEventEnabledMonitoringConfigMapsEnabledByDefault() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
 				"spring.main.cloud-platform=KUBERNETES");
-		assertThat(context.containsBean("configMapPropertySourceLocator")).isTrue();
-		assertThat(context.containsBean("secretsPropertySourceLocator")).isTrue();
-		assertThat(context.containsBean("configMapPropertyChangePollingWatcher")).isTrue();
-		assertThat(context.containsBean("secretsPropertyChangePollingWatcher")).isTrue();
-		assertThat(context.containsBean("configMapPropertyChangeEventWatcher")).isFalse();
-		assertThat(context.containsBean("secretsPropertyChangeEventWatcher")).isFalse();
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 1);
+		Assertions.assertTrue(map.values()
+			.iterator()
+			.next()
+			.getClass()
+			.isAssignableFrom(KubernetesClientEventBasedConfigMapChangeDetector.class));
 	}
 
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is true by default
+	 *
+	 *     - config map event watcher is picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
 	@Test
-	void kubernetesReloadEnabledWithEvent() throws Exception {
+	void reloadEventEnabledMonitoringConfigMapsEnabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.cloud.kubernetes.reload.mode=event", "spring.main.cloud-platform=KUBERNETES");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 1);
+		Assertions.assertTrue(map.values()
+			.iterator()
+			.next()
+			.getClass()
+			.isAssignableFrom(KubernetesClientEventBasedConfigMapChangeDetector.class));
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is false
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadEventEnabledMonitoringConfigMapsDisabled() {
 		setup("spring.cloud.kubernetes.reload.enabled=true", "spring.cloud.kubernetes.reload.mode=event",
-				"spring.main.cloud-platform=KUBERNETES");
-		assertThat(context.containsBean("configMapPropertyChangePollingWatcher")).isFalse();
-		assertThat(context.containsBean("secretsPropertyChangePollingWatcher")).isFalse();
-		assertThat(context.containsBean("configMapPropertyChangeEventWatcher")).isTrue();
-		assertThat(context.containsBean("secretsPropertyChangeEventWatcher")).isTrue();
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-configMaps=false");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 0);
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via poll reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is false
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadPollingEnabledMonitoringConfigMapsDisabledMonitoringSecretsDisabled() {
+		setup("spring.cloud.kubernetes.reload.enabled=true", "spring.cloud.kubernetes.reload.mode=polling",
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-configMaps=false");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 0);
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via poll reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is true by default
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadPollingEnabledMonitoringConfigMapsEnabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.cloud.kubernetes.reload.mode=polling", "spring.main.cloud-platform=KUBERNETES");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 1);
+		Assertions.assertTrue(
+				map.values().iterator().next().getClass().isAssignableFrom(PollingConfigMapChangeDetector.class));
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is true
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is false
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadEventEnabledMonitoringConfigMapsDisabledMonitoringSecretsEnabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-secrets=true",
+				"spring.cloud.kubernetes.reload.monitoring-configMaps=false",
+				"spring.cloud.kubernetes.reload.mode=event");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 1);
+		Assertions.assertTrue(map.values()
+			.iterator()
+			.next()
+			.getClass()
+			.isAssignableFrom(KubernetesClientEventBasedSecretsChangeDetector.class));
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is true
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is false
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadPollingEnabledMonitoringConfigMapsDisabledMonitoringSecretsEnabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-secrets=true",
+				"spring.cloud.kubernetes.reload.monitoring-configMaps=false",
+				"spring.cloud.kubernetes.reload.mode=polling");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 1);
+		Assertions
+			.assertTrue(map.values().iterator().next().getClass().isAssignableFrom(PollingSecretsChangeDetector.class));
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is true
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is true
+	 *
+	 *     - config map event watcher is picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadEventEnabledMonitoringConfigMapsEnabledMonitoringSecretsEnabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-secrets=true",
+				"spring.cloud.kubernetes.reload.monitoring-configMaps=true",
+				"spring.cloud.kubernetes.reload.mode=event");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 2);
+		List<ConfigurationChangeDetector> result = map.values()
+			.stream()
+			.sorted(Comparator.comparing(x -> x.getClass().getName()))
+			.toList();
+		Assertions.assertEquals(result.get(0).getClass(), KubernetesClientEventBasedConfigMapChangeDetector.class);
+		Assertions.assertEquals(result.get(1).getClass(), KubernetesClientEventBasedSecretsChangeDetector.class);
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is true
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is true
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadPollingEnabledMonitoringConfigMapsEnabledMonitoringSecretsEnabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-secrets=true",
+				"spring.cloud.kubernetes.reload.monitoring-configMaps=true",
+				"spring.cloud.kubernetes.reload.mode=polling");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 2);
+		List<ConfigurationChangeDetector> result = map.values()
+			.stream()
+			.sorted(Comparator.comparing(x -> x.getClass().getName()))
+			.toList();
+		Assertions.assertEquals(result.get(0).getClass(), PollingConfigMapChangeDetector.class);
+		Assertions.assertEquals(result.get(1).getClass(), PollingSecretsChangeDetector.class);
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is false
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is false
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadEventEnabledMonitoringConfigMapsDisabledMonitoringSecretsDisabled() {
+		setup("spring.cloud.kubernetes.reload.enabled=true", "spring.cloud.kubernetes.reload.mode=event",
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-configMaps=false",
+				"spring.cloud.kubernetes.reload.monitoring-secrets=false");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 0);
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via poll reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is false
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is false
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadPollingEnabledMonitorConfigMapsDisabledMonitoringSecretsDisabled() {
+		setup("spring.cloud.kubernetes.reload.enabled=true", "spring.cloud.kubernetes.reload.mode=polling",
+				"spring.main.cloud-platform=KUBERNETES", "spring.cloud.kubernetes.reload.monitoring-configMaps=false",
+				"spring.cloud.kubernetes.reload.monitoring-secrets=false");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 0);
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via event reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is true
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is false
+	 *
+	 *     - config map event watcher is picked up
+	 *     - config map polling watcher is not picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadEventEnabledMonitoringConfigMapsEnabledMonitoringSecretsDisabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.cloud.kubernetes.reload.mode=event", "spring.main.cloud-platform=KUBERNETES",
+				"spring.cloud.kubernetes.reload.monitoring-configMaps=true",
+				"spring.cloud.kubernetes.reload.monitoring-secrets=false");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 1);
+		List<ConfigurationChangeDetector> result = map.values()
+			.stream()
+			.sorted(Comparator.comparing(x -> x.getClass().getName()))
+			.toList();
+		Assertions.assertEquals(result.get(0).getClass(), KubernetesClientEventBasedConfigMapChangeDetector.class);
+	}
+
+	/**
+	 * <pre>
+	 *     - reload mode is enabled (via polling reload)
+	 *     - spring.cloud.kubernetes.reload.monitoring-configMaps is true
+	 *     - spring.cloud.kubernetes.reload.monitoring-secrets is false
+	 *
+	 *     - config map event watcher is not picked up
+	 *     - config map polling watcher is picked up
+	 *     - secrets event watcher is not picked up
+	 *     - secrets polling watcher is not picked up
+	 * </pre>
+	 */
+	@Test
+	void reloadPollingEnabledMonitoringConfigMapsEnabledMonitoringSecretsDisabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.reload.enabled=true",
+				"spring.cloud.kubernetes.reload.mode=polling", "spring.main.cloud-platform=KUBERNETES",
+				"spring.cloud.kubernetes.reload.monitoring-configMaps=true",
+				"spring.cloud.kubernetes.reload.monitoring-secrets=false");
+		Map<String, ConfigurationChangeDetector> map = context.getBeansOfType(ConfigurationChangeDetector.class);
+		Assertions.assertEquals(map.size(), 1);
+		List<ConfigurationChangeDetector> result = map.values()
+			.stream()
+			.sorted(Comparator.comparing(x -> x.getClass().getName()))
+			.toList();
+		Assertions.assertEquals(result.get(0).getClass(), PollingConfigMapChangeDetector.class);
 	}
 
 	// 2. config and secrets property source locators
 
 	@Test
-	void kubernetesConfigAndSecretEnabledByDefault() throws Exception {
-		setup("spring.main.cloud-platform=KUBERNETES");
+	void kubernetesConfigAndSecretEnabledByDefault() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.main.cloud-platform=KUBERNETES");
 		assertThat(context.containsBean("configMapPropertySourceLocator")).isTrue();
 		assertThat(context.containsBean("secretsPropertySourceLocator")).isTrue();
 	}
 
 	@Test
-	void kubernetesConfigEnabledButSecretDisabled() throws Exception {
-		setup("spring.cloud.kubernetes.secrets.enabled=false", "spring.main.cloud-platform=KUBERNETES");
+	void kubernetesConfigEnabledButSecretDisabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.secrets.enabled=false",
+				"spring.main.cloud-platform=KUBERNETES");
 		assertThat(context.containsBean("configMapPropertySourceLocator")).isTrue();
 		assertThat(context.containsBean("secretsPropertySourceLocator")).isFalse();
 	}
 
 	@Test
-	void kubernetesSecretsEnabledButConfigDisabled() throws Exception {
-		setup("spring.cloud.kubernetes.config.enabled=false", "spring.main.cloud-platform=KUBERNETES");
+	void kubernetesSecretsEnabledButConfigDisabled() {
+		setup("spring.cloud.bootstrap.enabled=true", "spring.cloud.kubernetes.config.enabled=false",
+				"spring.main.cloud-platform=KUBERNETES");
 		assertThat(context.containsBean("configMapPropertySourceLocator")).isFalse();
 		assertThat(context.containsBean("secretsPropertySourceLocator")).isTrue();
 	}
@@ -201,9 +503,9 @@ public class KubernetesClientConfigReloadAutoConfigurationTest {
 		@ConditionalOnMissingBean(KubernetesClientProperties.class)
 		@Bean
 		KubernetesClientProperties kubernetesClientProperties() {
-			KubernetesClientProperties properties = new KubernetesClientProperties();
-			properties.setNamespace("default");
-			return properties;
+			return new KubernetesClientProperties(null, null, null, "default", null, null, null, null, null, null, null,
+					null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+					null);
 		}
 
 		@Bean

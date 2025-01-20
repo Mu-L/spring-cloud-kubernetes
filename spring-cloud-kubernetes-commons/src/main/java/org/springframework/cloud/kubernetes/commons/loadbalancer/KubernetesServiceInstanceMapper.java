@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2020 the original author or authors.
+ * Copyright 2013-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package org.springframework.cloud.kubernetes.commons.loadbalancer;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.StringJoiner;
 
 import org.springframework.cloud.kubernetes.commons.discovery.KubernetesServiceInstance;
 import org.springframework.util.StringUtils;
@@ -30,38 +29,8 @@ public interface KubernetesServiceInstanceMapper<T> {
 	KubernetesServiceInstance map(T service);
 
 	static String createHost(String serviceName, String namespace, String clusterDomain) {
-		return String.format("%s.%s.svc.%s", serviceName, StringUtils.hasText(namespace) ? namespace : "default",
-				clusterDomain);
-	}
-
-	static boolean isSecure(Map<String, String> labels, Map<String, String> annotations, String servicePortName,
-			Integer servicePort) {
-		if (labels != null) {
-			final String securedLabelValue = labels.getOrDefault("secured", "false");
-			if (securedLabelValue.equals("true")) {
-				return true;
-			}
-		}
-
-		if (annotations != null) {
-			final String securedAnnotationValue = annotations.getOrDefault("secured", "false");
-			if (securedAnnotationValue.equals("true")) {
-				return true;
-			}
-		}
-		return (servicePortName != null && servicePortName.endsWith("https")) || servicePort.toString().endsWith("443");
-	}
-
-	static Map<String, String> getMapWithPrefixedKeys(Map<String, String> map, String prefix) {
-		if (map == null) {
-			return new HashMap<>();
-		}
-		if (!StringUtils.hasText(prefix)) {
-			return map;
-		}
-		final Map<String, String> result = new HashMap<>();
-		map.forEach((k, v) -> result.put(prefix + k, v));
-		return result;
+		String namespaceToUse = StringUtils.hasText(namespace) ? namespace : "default";
+		return new StringJoiner(".").add(serviceName).add(namespaceToUse).add("svc").add(clusterDomain).toString();
 	}
 
 }

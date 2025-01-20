@@ -16,11 +16,15 @@
 
 package org.springframework.cloud.kubernetes.commons.config;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.function.Predicate;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -28,12 +32,8 @@ import org.apache.commons.logging.LogFactory;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.MapPropertySource;
 
-import static org.springframework.cloud.kubernetes.commons.config.Constants.APPLICATION_PROPERTIES;
-import static org.springframework.cloud.kubernetes.commons.config.Constants.APPLICATION_YAML;
-import static org.springframework.cloud.kubernetes.commons.config.Constants.APPLICATION_YML;
 import static org.springframework.cloud.kubernetes.commons.config.PropertySourceUtils.KEY_VALUE_TO_PROPERTIES;
 import static org.springframework.cloud.kubernetes.commons.config.PropertySourceUtils.PROPERTIES_TO_MAP;
-import static org.springframework.cloud.kubernetes.commons.config.PropertySourceUtils.throwingMerger;
 import static org.springframework.cloud.kubernetes.commons.config.PropertySourceUtils.yamlParserGenerator;
 
 /**
@@ -48,11 +48,19 @@ public class SourceDataEntriesProcessor extends MapPropertySource {
 
 	private static final Log LOG = LogFactory.getLog(SourceDataEntriesProcessor.class);
 
+	private static final Predicate<String> ENDS_IN_EXTENSION = x -> x.endsWith(".yml") || x.endsWith(".yaml")
+			|| x.endsWith(".properties");
+
 	public SourceDataEntriesProcessor(SourceData sourceData) {
 		super(sourceData.sourceName(), sourceData.sourceData());
 	}
 
 	public static Map<String, Object> processAllEntries(Map<String, String> input, Environment environment) {
+		return processAllEntries(input, environment, true);
+	}
+
+	public static Map<String, Object> processAllEntries(Map<String, String> input, Environment environment,
+			boolean includeDefaultProfileData) {
 
 		Set<Map.Entry<String, String>> entrySet = input.entrySet();
 		if (entrySet.size() == 1) {
@@ -71,26 +79,117 @@ public class SourceDataEntriesProcessor extends MapPropertySource {
 			}
 		}
 
-		return defaultProcessAllEntries(input, environment);
+		return defaultProcessAllEntries(input, environment, includeDefaultProfileData);
 	}
 
-	private static Map<String, Object> defaultProcessAllEntries(Map<String, String> input, Environment environment) {
+	static List<Map.Entry<String, String>> sorted(Map<String, String> input, Environment environment) {
+		return sorted(input, environment, true);
+	}
 
-		return input.entrySet().stream().map(e -> extractProperties(e.getKey(), e.getValue(), environment))
-				.flatMap(m -> m.entrySet().stream())
-				.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, throwingMerger(), HashMap::new));
+	/**
+	 * <pre>
+	 * 		we want to sort entries coming from the k8s source in a specific way:
+	 *
+	 * 	    1. "application.yaml/yml/properties" have to come first
+	 * 	       (or the value from spring.application.name)
+	 * 	    2. then profile specific entries, like "application-dev.yaml"
+	 * 	    3. then plain properties
+	 * </pre>
+	 */
+	static List<Map.Entry<String, String>> sorted(Map<String, String> rawData, Environment environment,
+			boolean includeDefaultProfileData) {
+
+		record WeightedEntry(Map.Entry<String, String> entry, int weight) {
+
+		}
+
+		// we pass empty Strings on purpose, the logic here is either the value of
+		// "spring.application.name" or literal "application".
+		String applicationName = ConfigUtils.getApplicationName(environment, "", "");
+		String[] activeProfiles = environment.getActiveProfiles();
+
+		// In some cases we want to include the properties from the default profile along
+		// with any properties from any active profiles
+		// In this case includeDefaultProfileData will be true or the active profile will
+		// be default
+		// In the case where includeDefaultProfileData is false we only want to include
+		// the properties from the active profiles
+		boolean includeDataEntry = includeDefaultProfileData
+				|| Arrays.asList(environment.getActiveProfiles()).contains("default");
+
+		// the order here is important, first has to come "application.yaml" and then
+		// "application-dev.yaml"
+		List<String> orderedFileNames = new ArrayList<>();
+		if (includeDataEntry) {
+			orderedFileNames.add(applicationName);
+		}
+		orderedFileNames.addAll(Arrays.stream(activeProfiles).map(profile -> applicationName + "-" + profile).toList());
+
+		int current = orderedFileNames.size() - 1;
+		List<WeightedEntry> weightedEntries = new ArrayList<>();
+
+		boolean plainEntriesOnly = rawData.keySet().stream().noneMatch(ENDS_IN_EXTENSION);
+
+		if (plainEntriesOnly) {
+			for (Map.Entry<String, String> entry : rawData.entrySet()) {
+				weightedEntries.add(new WeightedEntry(entry, ++current));
+			}
+		}
+		else {
+			for (Map.Entry<String, String> entry : rawData.entrySet()) {
+				String key = entry.getKey();
+				if (ENDS_IN_EXTENSION.test(key)) {
+					String withoutExtension = key.split("\\.", 2)[0];
+					int index = orderedFileNames.indexOf(withoutExtension);
+					if (index >= 0) {
+						weightedEntries.add(new WeightedEntry(entry, index));
+					}
+					else {
+						LOG.warn("entry : " + key + " will be skipped");
+					}
+				}
+				else {
+					if (includeDataEntry) {
+						weightedEntries.add(new WeightedEntry(entry, ++current));
+					}
+				}
+			}
+		}
+
+		return weightedEntries.stream()
+			.sorted(Comparator.comparing(WeightedEntry::weight))
+			.map(WeightedEntry::entry)
+			.toList();
+	}
+
+	private static Map<String, Object> defaultProcessAllEntries(Map<String, String> input, Environment environment,
+			boolean includeDefaultProfile) {
+
+		List<Map.Entry<String, String>> sortedEntries = sorted(input, environment, includeDefaultProfile);
+		Map<String, Object> result = new HashMap<>();
+		for (Map.Entry<String, String> entry : sortedEntries) {
+			result.putAll(extractProperties(entry.getKey(), entry.getValue(), environment));
+		}
+		return result;
+
 	}
 
 	private static Map<String, Object> extractProperties(String resourceName, String content, Environment environment) {
 
-		if (resourceName.equals(APPLICATION_YAML) || resourceName.equals(APPLICATION_YML)) {
-			return yamlParserGenerator(environment).andThen(PROPERTIES_TO_MAP).apply(content);
-		}
-		else if (resourceName.equals(APPLICATION_PROPERTIES)) {
-			return KEY_VALUE_TO_PROPERTIES.andThen(PROPERTIES_TO_MAP).apply(content);
+		if (resourceName.endsWith(".yml") || resourceName.endsWith(".yaml") || resourceName.endsWith(".properties")) {
+
+			if (resourceName.endsWith(".properties")) {
+				LOG.debug("entry : " + resourceName + " will be treated as a single properties file");
+				return KEY_VALUE_TO_PROPERTIES.andThen(PROPERTIES_TO_MAP).apply(content);
+			}
+			else {
+				LOG.debug("entry : " + resourceName + " will be treated as a single yml/yaml file");
+				return yamlParserGenerator(environment).andThen(PROPERTIES_TO_MAP).apply(content);
+			}
 		}
 
 		return Collections.singletonMap(resourceName, content);
+
 	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package org.springframework.cloud.kubernetes.commons.config.reload;
 
 import java.time.Duration;
-import java.util.List;
 
 import jakarta.annotation.PostConstruct;
 import org.apache.commons.logging.Log;
@@ -30,7 +29,7 @@ import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.support.PeriodicTrigger;
 
 /**
- * A change detector that periodically retrieves secrets and fire a reload when something
+ * A change detector that periodically retrieves secrets and fires a reload when something
  * changes.
  *
  * @author Nicola Ferraro
@@ -43,48 +42,40 @@ public class PollingSecretsChangeDetector extends ConfigurationChangeDetector {
 
 	private final PropertySourceLocator propertySourceLocator;
 
-	private Class propertySourceClass;
+	private final Class<? extends MapPropertySource> propertySourceClass;
 
-	private TaskScheduler taskExecutor;
+	private final TaskScheduler taskExecutor;
 
-	private Duration period = Duration.ofMillis(1500);
+	private final long period;
+
+	private final boolean monitorSecrets;
 
 	public PollingSecretsChangeDetector(AbstractEnvironment environment, ConfigReloadProperties properties,
-			ConfigurationUpdateStrategy strategy, Class propertySourceClass,
+			ConfigurationUpdateStrategy strategy, Class<? extends MapPropertySource> propertySourceClass,
 			PropertySourceLocator propertySourceLocator, TaskScheduler taskExecutor) {
 		super(environment, properties, strategy);
 		this.propertySourceLocator = propertySourceLocator;
 		this.propertySourceClass = propertySourceClass;
 		this.taskExecutor = taskExecutor;
-		this.period = properties.getPeriod();
+		this.period = properties.period().toMillis();
+		this.monitorSecrets = properties.monitoringSecrets();
 	}
 
 	@PostConstruct
-	public void init() {
-		this.log.info("Kubernetes polling secrets change detector activated");
-		PeriodicTrigger trigger = new PeriodicTrigger(period.toMillis());
-		trigger.setInitialDelay(period.toMillis());
+	private void init() {
+		log.info("Kubernetes polling secrets change detector activated");
+		PeriodicTrigger trigger = new PeriodicTrigger(Duration.ofMillis(period));
+		trigger.setInitialDelay(Duration.ofMillis(period));
 		taskExecutor.schedule(this::executeCycle, trigger);
 	}
 
-	public void executeCycle() {
-
-		boolean changedSecrets = false;
-		if (this.properties.isMonitoringSecrets()) {
-			if (log.isDebugEnabled()) {
-				log.debug("Polling for changes in secrets");
+	private void executeCycle() {
+		if (monitorSecrets) {
+			boolean changedSecrets = ConfigReloadUtil.reload(propertySourceLocator, environment, propertySourceClass);
+			if (changedSecrets) {
+				log.info("Detected change in secrets");
+				reloadProperties();
 			}
-			List<MapPropertySource> currentSecretSources = locateMapPropertySources(this.propertySourceLocator,
-					this.environment);
-			if (currentSecretSources != null && !currentSecretSources.isEmpty()) {
-				List<MapPropertySource> propertySources = findPropertySources(this.propertySourceClass);
-				changedSecrets = changed(currentSecretSources, propertySources);
-			}
-		}
-
-		if (changedSecrets) {
-			this.log.info("Detected change in secrets");
-			reloadProperties();
 		}
 	}
 

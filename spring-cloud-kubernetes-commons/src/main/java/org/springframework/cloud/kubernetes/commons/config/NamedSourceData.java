@@ -16,12 +16,15 @@
 
 package org.springframework.cloud.kubernetes.commons.config;
 
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import static org.springframework.cloud.kubernetes.commons.config.ConfigUtils.onException;
+import static org.springframework.cloud.kubernetes.commons.config.Constants.ERROR_PROPERTY;
 import static org.springframework.cloud.kubernetes.commons.config.Constants.PROPERTY_SOURCE_NAME_SEPARATOR;
 
 /**
@@ -32,27 +35,31 @@ import static org.springframework.cloud.kubernetes.commons.config.Constants.PROP
  */
 public abstract class NamedSourceData {
 
-	public final SourceData compute(String initialSourceName, ConfigUtils.Prefix prefix, String target,
-			boolean profileSources, boolean failFast, String namespace, String[] activeProfiles) {
+	private static final Log LOG = LogFactory.getLog(NamedSourceData.class);
 
-		Set<String> sourceNames = new HashSet<>();
-		sourceNames.add(initialSourceName);
+	public final SourceData compute(String sourceName, ConfigUtils.Prefix prefix, String target, boolean profileSources,
+			boolean failFast, String namespace, String[] activeProfiles) {
+
+		LinkedHashSet<String> sourceNames = new LinkedHashSet<>();
+		// first comes non-profile based source
+		sourceNames.add(sourceName);
 
 		MultipleSourcesContainer data = MultipleSourcesContainer.empty();
-		String currentSourceName;
 
 		try {
 			if (profileSources) {
 				for (String activeProfile : activeProfiles) {
-					currentSourceName = initialSourceName + "-" + activeProfile;
-					sourceNames.add(currentSourceName);
+					// add all profile based sources _after_ non-profile based one
+					sourceNames.add(sourceName + "-" + activeProfile);
 				}
 			}
 
 			data = dataSupplier(sourceNames);
 
 			if (data.names().isEmpty()) {
-				return new SourceData(ConfigUtils.sourceName(target, initialSourceName, namespace), Map.of());
+				String emptySourceName = ConfigUtils.sourceName(target, sourceName, namespace);
+				LOG.debug("Will return empty source with name : " + emptySourceName);
+				return SourceData.emptyRecord(emptySourceName);
 			}
 
 			if (prefix != ConfigUtils.Prefix.DEFAULT) {
@@ -64,19 +71,26 @@ public abstract class NamedSourceData {
 
 		}
 		catch (Exception e) {
+			LOG.warn("Failure in reading named sources");
 			onException(failFast, e);
+			data = new MultipleSourcesContainer(data.names(), Map.of(ERROR_PROPERTY, "true"));
 		}
 
 		String names = data.names().stream().sorted().collect(Collectors.joining(PROPERTY_SOURCE_NAME_SEPARATOR));
-		return new SourceData(ConfigUtils.sourceName(target, names, namespace), data.data());
+		return new SourceData(generateSourceName(target, names, namespace, activeProfiles), data.data());
+	}
+
+	protected String generateSourceName(String target, String sourceName, String namespace, String[] activeProfiles) {
+		return ConfigUtils.sourceName(target, sourceName, namespace);
 	}
 
 	/**
 	 * Implementation specific (fabric8 or k8s-native) way to get the data from then given
 	 * source names.
-	 * @param sourceNames the ones that have been configured
+	 * @param sourceNames the ones that have been configured, LinkedHashSet in order ot
+	 * preserve the order: non-profile source first and then the rest
 	 * @return an Entry that holds the names of the source that were found and their data
 	 */
-	public abstract MultipleSourcesContainer dataSupplier(Set<String> sourceNames);
+	public abstract MultipleSourcesContainer dataSupplier(LinkedHashSet<String> sourceNames);
 
 }

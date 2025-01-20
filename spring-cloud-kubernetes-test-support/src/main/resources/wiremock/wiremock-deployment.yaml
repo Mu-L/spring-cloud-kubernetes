@@ -1,28 +1,34 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: servicea-wiremock-deployment
+  name: service-wiremock-deployment
 spec:
   selector:
     matchLabels:
-      app: servicea-wiremock
+      app: service-wiremock
   template:
     metadata:
       labels:
-        app: servicea-wiremock
+        app: service-wiremock
     spec:
       containers:
-        - name: servicea-wiremock
-          image: wiremock/wiremock:2.32.0
+        - name: service-wiremock
+          image: wiremock/wiremock
           args: ["--verbose"]
           imagePullPolicy: IfNotPresent
           readinessProbe:
             httpGet:
               port: 8080
               path: /__admin/mappings
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            failureThreshold: 1
           livenessProbe:
             httpGet:
               port: 8080
               path: /__admin/mappings
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            failureThreshold: 1
           ports:
             - containerPort: 8080

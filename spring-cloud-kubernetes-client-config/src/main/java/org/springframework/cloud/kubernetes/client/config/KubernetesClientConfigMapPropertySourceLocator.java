@@ -22,15 +22,17 @@ import org.springframework.cloud.kubernetes.commons.KubernetesNamespaceProvider;
 import org.springframework.cloud.kubernetes.commons.config.ConfigMapConfigProperties;
 import org.springframework.cloud.kubernetes.commons.config.ConfigMapPropertySourceLocator;
 import org.springframework.cloud.kubernetes.commons.config.NormalizedSource;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
-import static org.springframework.cloud.kubernetes.client.config.KubernetesClientConfigUtils.getApplicationNamespace;
+import static org.springframework.cloud.kubernetes.client.KubernetesClientUtils.getApplicationNamespace;
 
 /**
  * @author Ryan Baxter
  * @author Isik Erhan
  */
+@Order(0)
 public class KubernetesClientConfigMapPropertySourceLocator extends ConfigMapPropertySourceLocator {
 
 	private final CoreV1Api coreV1Api;
@@ -39,7 +41,7 @@ public class KubernetesClientConfigMapPropertySourceLocator extends ConfigMapPro
 
 	public KubernetesClientConfigMapPropertySourceLocator(CoreV1Api coreV1Api, ConfigMapConfigProperties properties,
 			KubernetesNamespaceProvider kubernetesNamespaceProvider) {
-		super(properties);
+		super(properties, new KubernetesClientConfigMapsCache());
 		this.coreV1Api = coreV1Api;
 		this.kubernetesNamespaceProvider = kubernetesNamespaceProvider;
 	}

@@ -1,0 +1,13 @@
+spring:
+  cloud:
+    kubernetes:
+      config:
+        sources:
+          - namespace: right
+            name: right-configmap
+
+  # otherwise on context refresh we lose this property
+  # and test fails, since beans are not wired.
+  main:
+    cloud-platform: kubernetes
+

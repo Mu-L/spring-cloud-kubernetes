@@ -17,20 +17,28 @@
 package org.springframework.cloud.kubernetes.commons.config;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiPredicate;
+import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.boot.BootstrapRegistry;
+import org.springframework.boot.ConfigurableBootstrapContext;
+import org.springframework.context.ApplicationListener;
 import org.springframework.core.env.Environment;
+import org.springframework.core.style.ToStringCreator;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -46,6 +54,15 @@ import static org.springframework.cloud.kubernetes.commons.config.Constants.SPRI
 public final class ConfigUtils {
 
 	private static final Log LOG = LogFactory.getLog(ConfigUtils.class);
+
+	// sourceName (configmap or secret name) ends with : "-dev.yaml" or the like.
+	private static final BiPredicate<String, String> ENDS_WITH_PROFILE_AND_EXTENSION = (sourceName,
+			activeProfile) -> sourceName.endsWith("-" + activeProfile + ".yml")
+					|| sourceName.endsWith("-" + activeProfile + ".yaml")
+					|| sourceName.endsWith("-" + activeProfile + ".properties");
+
+	private static final ApplicationListener<?> NO_OP = (e) -> {
+	};
 
 	private ConfigUtils() {
 	}
@@ -158,33 +175,99 @@ public final class ConfigUtils {
 		return target + PROPERTY_SOURCE_NAME_SEPARATOR + applicationName + PROPERTY_SOURCE_NAME_SEPARATOR + namespace;
 	}
 
+	public static String sourceName(String target, String applicationName, String namespace, String[] profiles) {
+		String name = sourceName(target, applicationName, namespace);
+		if (profiles != null && profiles.length > 0) {
+			name = name + PROPERTY_SOURCE_NAME_SEPARATOR + StringUtils.arrayToDelimitedString(profiles, "-");
+		}
+		return name;
+	}
+
+	public static MultipleSourcesContainer processNamedData(List<StrippedSourceContainer> strippedSources,
+			Environment environment, LinkedHashSet<String> sourceNames, String namespace, boolean decode) {
+		return processNamedData(strippedSources, environment, sourceNames, namespace, decode, true);
+	}
+
 	/**
 	 * transforms raw data from one or multiple sources into an entry of source names and
 	 * flattened data that they all hold (potentially overriding entries without any
 	 * defined order).
 	 */
 	public static MultipleSourcesContainer processNamedData(List<StrippedSourceContainer> strippedSources,
-			Environment environment, Set<String> sourceNames, String namespace, boolean decode) {
+			Environment environment, LinkedHashSet<String> sourceNames, String namespace, boolean decode,
+			boolean includeDefaultProfileData) {
 
-		Set<String> foundSourceNames = new HashSet<>();
+		Map<String, StrippedSourceContainer> hashByName = strippedSources.stream()
+			.collect(Collectors.toMap(StrippedSourceContainer::name, Function.identity()));
+
+		LinkedHashSet<String> foundSourceNames = new LinkedHashSet<>();
 		Map<String, Object> data = new HashMap<>();
 
-		strippedSources.stream().filter(source -> sourceNames.contains(source.name())).collect(Collectors.toList())
-				.forEach(foundSource -> {
-					String sourceName = foundSource.name();
-					LOG.debug("Found source with name : '" + sourceName + " in namespace: '" + namespace + "'");
-					foundSourceNames.add(sourceName);
-					// see if data is a single yaml/properties file and if it needs
-					// decoding
-					Map<String, String> rawData = foundSource.data();
-					if (decode) {
-						rawData = decodeData(rawData);
-					}
+		// this is an ordered stream, and it means that non-profile based sources will be
+		// processed before profile based sources. This way, we replicate that
+		// "application-dev.yaml"
+		// overrides properties from "application.yaml"
+		sourceNames.forEach(sourceName -> {
+			StrippedSourceContainer stripped = hashByName.get(sourceName);
+			if (stripped != null) {
+				LOG.debug("Found source with name : '" + sourceName + "' in namespace: '" + namespace + "'");
+				foundSourceNames.add(sourceName);
+				// see if data is a single yaml/properties file and if it needs decoding
+				Map<String, String> rawData = stripped.data();
+				if (decode) {
+					rawData = decodeData(rawData);
+				}
+
+				/*
+				 * In some cases we want to include properties from the default profile
+				 * along with any active profiles In these cases includeDefaultProfileData
+				 * will be true If includeDefaultProfileData is false then we want to make
+				 * sure that we only return properties from any active profiles
+				 */
+				if (processSource(includeDefaultProfileData, environment, sourceName, rawData)) {
 					data.putAll(SourceDataEntriesProcessor.processAllEntries(rawData == null ? Map.of() : rawData,
-							environment));
-				});
+							environment, includeDefaultProfileData));
+				}
+			}
+			else {
+				LOG.warn("sourceName : " + sourceName + " was requested, but not found in namespace : " + namespace);
+			}
+		});
 
 		return new MultipleSourcesContainer(foundSourceNames, data);
+	}
+
+	static boolean processSource(boolean includeDefaultProfileData, Environment environment, String sourceName,
+			Map<String, String> sourceRawData) {
+		List<String> activeProfiles = Arrays.stream(environment.getActiveProfiles()).toList();
+
+		boolean emptyActiveProfiles = activeProfiles.isEmpty();
+
+		boolean profileBasedSourceName = activeProfiles.stream()
+			.anyMatch(activeProfile -> sourceName.endsWith("-" + activeProfile));
+
+		boolean defaultProfilePresent = activeProfiles.contains("default");
+
+		return includeDefaultProfileData || emptyActiveProfiles || profileBasedSourceName || defaultProfilePresent
+				|| rawDataContainsProfileBasedSource(activeProfiles, sourceRawData).getAsBoolean();
+	}
+
+	/*
+	 * this one is not inlined into 'processSource' because other filters, that come
+	 * before it, might have already resolved to 'true', so no need to compute it at all.
+	 *
+	 * This method is supposed to answer the question if raw data that a certain source
+	 * (configmap or secret) has entries that are themselves profile based
+	 * yaml/yml/properties. For example: 'account-k8s.yaml' or the like.
+	 */
+	static BooleanSupplier rawDataContainsProfileBasedSource(List<String> activeProfiles,
+			Map<String, String> sourceRawData) {
+		return () -> Optional.ofNullable(sourceRawData)
+			.orElse(Map.of())
+			.keySet()
+			.stream()
+			.anyMatch(keyName -> activeProfiles.stream()
+				.anyMatch(activeProfile -> ENDS_WITH_PROFILE_AND_EXTENSION.test(keyName, activeProfile)));
 	}
 
 	/**
@@ -199,16 +282,16 @@ public final class ConfigUtils {
 			boolean decode) {
 
 		// find sources by provided labels
-		List<StrippedSourceContainer> sourcesByLabels = containers.stream().filter(one -> {
+		List<StrippedSourceContainer> byLabels = containers.stream().filter(one -> {
 			Map<String, String> sourceLabels = one.labels();
 			Map<String, String> labelsToSearchAgainst = sourceLabels == null ? Map.of() : sourceLabels;
 			return labelsToSearchAgainst.entrySet().containsAll((labels.entrySet()));
-		}).collect(Collectors.toList());
+		}).toList();
 
-		// compute profile based sources (based on the ones we found by labels)
+		// compute profile based source names (based on the ones we found by labels)
 		List<String> sourceNamesByLabelsWithProfile = new ArrayList<>();
 		if (profiles != null && !profiles.isEmpty()) {
-			for (StrippedSourceContainer one : sourcesByLabels) {
+			for (StrippedSourceContainer one : byLabels) {
 				for (String profile : profiles) {
 					String name = one.name() + "-" + profile;
 					sourceNamesByLabelsWithProfile.add(name);
@@ -219,15 +302,19 @@ public final class ConfigUtils {
 		// once we know sources by labels (and thus their names), we can find out
 		// profiles based sources from the above. This would get all sources
 		// we are interested in.
-		List<StrippedSourceContainer> sourcesToTake = containers.stream()
-				.filter(one -> sourceNamesByLabelsWithProfile.contains(one.name()))
-				.collect(Collectors.toCollection(ArrayList::new));
-		sourcesToTake.addAll(sourcesByLabels);
+		List<StrippedSourceContainer> byProfile = containers.stream()
+			.filter(one -> sourceNamesByLabelsWithProfile.contains(one.name()))
+			.toList();
 
-		Set<String> sourceNames = new HashSet<>();
+		// this makes sure that we first have "app" and then "app-dev" in the list
+		List<StrippedSourceContainer> all = new ArrayList<>(byLabels.size() + byProfile.size());
+		all.addAll(byLabels);
+		all.addAll(byProfile);
+
+		LinkedHashSet<String> sourceNames = new LinkedHashSet<>();
 		Map<String, Object> result = new HashMap<>();
 
-		sourcesToTake.forEach(source -> {
+		all.forEach(source -> {
 			String foundSourceName = source.name();
 			LOG.debug("Loaded source with name : '" + foundSourceName + " in namespace: '" + namespace + "'");
 			sourceNames.add(foundSourceName);
@@ -242,17 +329,44 @@ public final class ConfigUtils {
 		return new MultipleSourcesContainer(sourceNames, result);
 	}
 
-	public static boolean noSources(List<?> sources, String namespace) {
-		if (sources == null || sources.isEmpty()) {
-			LOG.debug("No sources in namespace '" + namespace + "'");
-			return true;
-		}
-		return false;
-	}
-
 	private static Map<String, String> decodeData(Map<String, String> data) {
 		Map<String, String> result = new HashMap<>(CollectionUtils.newHashMap(data.size()));
 		data.forEach((key, value) -> result.put(key, new String(Base64.getDecoder().decode(value)).trim()));
+		return result;
+	}
+
+	public static <T> void registerSingle(ConfigurableBootstrapContext bootstrapContext, Class<T> cls, T instance,
+			String name, ApplicationListener<?> listener) {
+		bootstrapContext.registerIfAbsent(cls, BootstrapRegistry.InstanceSupplier.of(instance));
+		bootstrapContext.addCloseListener(event -> {
+			if (event.getApplicationContext().getBeanFactory().getSingleton(name) == null) {
+				event.getApplicationContext()
+					.getBeanFactory()
+					.registerSingleton(name, event.getBootstrapContext().get(cls));
+				event.getApplicationContext().addApplicationListener(listener);
+			}
+		});
+	}
+
+	public static <T> void registerSingle(ConfigurableBootstrapContext bootstrapContext, Class<T> cls, T instance,
+			String name) {
+		registerSingle(bootstrapContext, cls, instance, name, NO_OP);
+	}
+
+	/**
+	 * append prefix to the keys and return a new Map with the new values.
+	 */
+	public static Map<String, String> keysWithPrefix(Map<String, String> map, String prefix) {
+		if (map == null || map.isEmpty()) {
+			return Map.of();
+		}
+
+		if (!StringUtils.hasText(prefix)) {
+			return map;
+		}
+
+		Map<String, String> result = CollectionUtils.newHashMap(map.size());
+		map.forEach((key, value) -> result.put(prefix + key, value));
 		return result;
 	}
 
@@ -261,7 +375,7 @@ public final class ConfigUtils {
 		/**
 		 * prefix has not been provided.
 		 */
-		public static final Prefix DEFAULT = new Prefix(() -> "");
+		public static final Prefix DEFAULT = new Prefix(() -> "", "DEFAULT");
 
 		/**
 		 * prefix has been enabled, but the actual value will be known later; the value
@@ -270,7 +384,7 @@ public final class ConfigUtils {
 		 */
 		public static final Prefix DELAYED = new Prefix(() -> {
 			throw new IllegalArgumentException("prefix is delayed, needs to be taken elsewhere");
-		});
+		}, "DELAYED");
 
 		/**
 		 * prefix is known at the callsite.
@@ -283,12 +397,19 @@ public final class ConfigUtils {
 
 		private final Supplier<String> prefixProvider;
 
-		private Prefix(Supplier<String> prefixProvider) {
+		private final String name;
+
+		private Prefix(Supplier<String> prefixProvider, String name) {
 			this.prefixProvider = prefixProvider;
+			this.name = name;
 		}
 
 		private static void computeKnown(Supplier<String> supplier) {
-			KNOWN = new Prefix(supplier);
+			KNOWN = new Prefix(supplier, "KNOWN");
+		}
+
+		public String toString() {
+			return new ToStringCreator(this).append("name", name).toString();
 		}
 
 	}

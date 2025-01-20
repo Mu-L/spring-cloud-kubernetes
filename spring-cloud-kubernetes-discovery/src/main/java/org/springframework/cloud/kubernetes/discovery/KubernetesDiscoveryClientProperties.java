@@ -16,17 +16,29 @@
 
 package org.springframework.cloud.kubernetes.discovery;
 
+import java.util.Set;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * @author Ryan Baxter
+ * @deprecated use
+ * {@link org.springframework.cloud.kubernetes.commons.discovery.KubernetesDiscoveryProperties}
+ * instead.
  */
+@Deprecated(forRemoval = true)
 @ConfigurationProperties("spring.cloud.kubernetes.discovery")
 public class KubernetesDiscoveryClientProperties {
 
 	private String discoveryServerUrl;
 
 	private boolean enabled = true;
+
+	/**
+	 * If set then only the services and endpoints matching these namespaces will be
+	 * fetched from the Kubernetes API server.
+	 */
+	private Set<String> namespaces = Set.of();
 
 	public String getDiscoveryServerUrl() {
 		return discoveryServerUrl;
@@ -42,6 +54,14 @@ public class KubernetesDiscoveryClientProperties {
 
 	public void setEnabled(boolean enabled) {
 		this.enabled = enabled;
+	}
+
+	Set<String> getNamespaces() {
+		return namespaces;
+	}
+
+	void setNamespaces(Set<String> namespaces) {
+		this.namespaces = namespaces;
 	}
 
 }

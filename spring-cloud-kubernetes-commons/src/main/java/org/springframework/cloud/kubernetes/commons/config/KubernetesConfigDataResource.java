@@ -62,10 +62,16 @@ public class KubernetesConfigDataResource extends ConfigDataResource {
 		return this.properties;
 	}
 
+	/**
+	 * ConfigMapConfigProperties that might be null.
+	 */
 	public ConfigMapConfigProperties getConfigMapProperties() {
 		return configMapProperties;
 	}
 
+	/**
+	 * SecretsConfigProperties that might be null.
+	 */
 	public SecretsConfigProperties getSecretsConfigProperties() {
 		return secretsConfigProperties;
 	}
@@ -121,8 +127,9 @@ public class KubernetesConfigDataResource extends ConfigDataResource {
 
 	@Override
 	public String toString() {
-		return new ToStringCreator(this).append("optional", optional).append("profiles", profiles.getAccepted())
-				.toString();
+		return new ToStringCreator(this).append("optional", optional)
+			.append("profiles", profiles.getAccepted())
+			.toString();
 
 	}
 

@@ -20,21 +20,20 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.cloud.kubernetes.commons.config.AbstractConfigProperties;
 import org.springframework.cloud.kubernetes.commons.config.App;
 import org.springframework.cloud.kubernetes.commons.config.ConfigMapConfigProperties;
+import org.springframework.cloud.kubernetes.commons.config.RetryProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Isik Erhan
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, classes = App.class,
-		properties = { "spring.cloud.kubernetes.config.fail-fast=true",
-				"spring.cloud.kubernetes.config.retry.max-attempts=3",
-				"spring.cloud.kubernetes.config.retry.initial-interval=1500",
-				"spring.cloud.kubernetes.config.retry.max-interval=3000",
-				"spring.cloud.kubernetes.config.retry.multiplier=1.5", "spring.main.cloud-platform=KUBERNETES" })
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, classes = App.class, properties = {
+		"spring.cloud.kubernetes.config.fail-fast=true", "spring.cloud.kubernetes.config.retry.max-attempts=3",
+		"spring.cloud.kubernetes.config.retry.initial-interval=1500",
+		"spring.cloud.kubernetes.config.retry.max-interval=3000", "spring.cloud.kubernetes.config.retry.multiplier=1.5",
+		"spring.main.cloud-platform=KUBERNETES", "spring.cloud.config.enabled=false" })
 class ConfigFailFastEnabledWithCustomRetryConfiguration {
 
 	@Autowired
@@ -42,12 +41,12 @@ class ConfigFailFastEnabledWithCustomRetryConfiguration {
 
 	@Test
 	void retryConfigurationShouldBeCustomized() {
-		AbstractConfigProperties.RetryProperties retryProperties = configMapConfigProperties.getRetry();
+		RetryProperties retryProperties = configMapConfigProperties.retry();
 
-		assertThat(retryProperties.getMaxAttempts()).isEqualTo(3);
-		assertThat(retryProperties.getInitialInterval()).isEqualTo(1500L);
-		assertThat(retryProperties.getMaxInterval()).isEqualTo(3000L);
-		assertThat(retryProperties.getMultiplier()).isEqualTo(1.5D);
+		assertThat(retryProperties.maxAttempts()).isEqualTo(3);
+		assertThat(retryProperties.initialInterval()).isEqualTo(1500L);
+		assertThat(retryProperties.maxInterval()).isEqualTo(3000L);
+		assertThat(retryProperties.multiplier()).isEqualTo(1.5D);
 	}
 
 }

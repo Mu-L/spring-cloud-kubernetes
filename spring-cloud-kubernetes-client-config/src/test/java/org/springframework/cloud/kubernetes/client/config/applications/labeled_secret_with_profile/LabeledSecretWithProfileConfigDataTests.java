@@ -22,6 +22,7 @@ import io.kubernetes.client.util.ClientBuilder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cloud.kubernetes.client.KubernetesClientUtils;
@@ -29,7 +30,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.mockito.Mockito.mockStatic;
-import static org.springframework.cloud.kubernetes.client.config.boostrap.stubs.LabeledSecretWithProfileConfigurationStub.stubData;
+import static org.springframework.cloud.kubernetes.client.config.bootstrap.stubs.LabeledSecretWithProfileConfigurationStub.stubData;
 
 /**
  * @author wind57
@@ -50,7 +51,10 @@ class LabeledSecretWithProfileConfigDataTests extends LabeledSecretWithProfileTe
 		WireMock.configureFor("localhost", server.port());
 		clientUtilsMock = mockStatic(KubernetesClientUtils.class);
 		clientUtilsMock.when(KubernetesClientUtils::kubernetesApiClient)
-				.thenReturn(new ClientBuilder().setBasePath(server.baseUrl()).build());
+			.thenReturn(new ClientBuilder().setBasePath(server.baseUrl()).build());
+		clientUtilsMock
+			.when(() -> KubernetesClientUtils.getApplicationNamespace(Mockito.any(), Mockito.any(), Mockito.any()))
+			.thenReturn("spring-k8s");
 		stubData();
 	}
 

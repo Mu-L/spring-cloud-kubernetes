@@ -22,9 +22,9 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.cloud.kubernetes.commons.config.AbstractConfigProperties;
 import org.springframework.cloud.kubernetes.commons.config.App;
 import org.springframework.cloud.kubernetes.commons.config.ConfigMapConfigProperties;
+import org.springframework.cloud.kubernetes.commons.config.RetryProperties;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 
@@ -34,7 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Isik Erhan
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, classes = App.class,
-		properties = { "spring.cloud.kubernetes.config.fail-fast=true", "spring.main.cloud-platform=KUBERNETES" })
+		properties = { "spring.cloud.kubernetes.config.fail-fast=true", "spring.main.cloud-platform=KUBERNETES",
+				"spring.cloud.config.enabled=false" })
 class ConfigFailFastEnabled {
 
 	@Autowired
@@ -46,20 +47,20 @@ class ConfigFailFastEnabled {
 	@Test
 	void shouldDefineRequiredBeans() {
 		Map<String, RetryOperationsInterceptor> retryInterceptors = context
-				.getBeansOfType(RetryOperationsInterceptor.class);
+			.getBeansOfType(RetryOperationsInterceptor.class);
 		assertThat(retryInterceptors.containsKey("kubernetesConfigRetryInterceptor")).isTrue();
 		assertThat(retryInterceptors.containsKey("kubernetesSecretsRetryInterceptor")).isTrue();
 	}
 
 	@Test
 	void retryConfigurationShouldBeDefault() {
-		AbstractConfigProperties.RetryProperties retryProperties = configMapConfigProperties.getRetry();
-		AbstractConfigProperties.RetryProperties defaultRetryProperties = new AbstractConfigProperties.RetryProperties();
+		RetryProperties retryProperties = configMapConfigProperties.retry();
+		RetryProperties defaultRetryProperties = RetryProperties.DEFAULT;
 
-		assertThat(retryProperties.getMaxAttempts()).isEqualTo(defaultRetryProperties.getMaxAttempts());
-		assertThat(retryProperties.getInitialInterval()).isEqualTo(defaultRetryProperties.getInitialInterval());
-		assertThat(retryProperties.getMaxInterval()).isEqualTo(defaultRetryProperties.getMaxInterval());
-		assertThat(retryProperties.getMultiplier()).isEqualTo(defaultRetryProperties.getMultiplier());
+		assertThat(retryProperties.maxAttempts()).isEqualTo(defaultRetryProperties.maxAttempts());
+		assertThat(retryProperties.initialInterval()).isEqualTo(defaultRetryProperties.initialInterval());
+		assertThat(retryProperties.maxInterval()).isEqualTo(defaultRetryProperties.maxInterval());
+		assertThat(retryProperties.multiplier()).isEqualTo(defaultRetryProperties.multiplier());
 	}
 
 }

@@ -16,15 +16,27 @@
 
 package org.springframework.cloud.kubernetes.fabric8.config;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.server.mock.EnableKubernetesMockClient;
 import io.fabric8.kubernetes.client.server.mock.KubernetesMockServer;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.cloud.kubernetes.commons.KubernetesNamespaceProvider;
+import org.springframework.cloud.kubernetes.commons.config.RetryProperties;
 import org.springframework.cloud.kubernetes.commons.config.SecretsConfigProperties;
+import org.springframework.core.env.CompositePropertySource;
+import org.springframework.core.env.PropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -32,51 +44,61 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * @author Isik Erhan
  */
 @EnableKubernetesMockClient
+@ExtendWith(OutputCaptureExtension.class)
 class Fabric8SecretsPropertySourceLocatorTests {
 
-	KubernetesMockServer mockServer;
+	private static KubernetesMockServer mockServer;
 
-	KubernetesClient mockClient;
+	private static KubernetesClient mockClient;
+
+	@BeforeAll
+	static void beforeAll() {
+		mockClient.getConfiguration().setRequestRetryBackoffInterval(1);
+	}
 
 	@Test
 	void locateShouldThrowExceptionOnFailureWhenFailFastIsEnabled() {
-		final String name = "my-config";
-		final String namespace = "default";
-		final String path = String.format("/api/v1/namespaces/%s/secrets", namespace);
+		String name = "my-secret";
+		String namespace = "default";
+		String path = "/api/v1/namespaces/default/secrets";
 
-		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").once();
+		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").always();
 
-		SecretsConfigProperties configMapConfigProperties = new SecretsConfigProperties();
-		configMapConfigProperties.setName(name);
-		configMapConfigProperties.setNamespace(namespace);
-		configMapConfigProperties.setEnableApi(true);
-		configMapConfigProperties.setFailFast(true);
+		SecretsConfigProperties configMapConfigProperties = new SecretsConfigProperties(true, Map.of(), List.of(),
+				List.of(), true, name, namespace, false, true, true, RetryProperties.DEFAULT);
 
 		Fabric8SecretsPropertySourceLocator locator = new Fabric8SecretsPropertySourceLocator(mockClient,
 				configMapConfigProperties, new KubernetesNamespaceProvider(new MockEnvironment()));
 
 		assertThatThrownBy(() -> locator.locate(new MockEnvironment())).isInstanceOf(IllegalStateException.class)
-				.hasMessageContaining("v1/namespaces/default/secrets. Message: Internal Server Error.");
+			.hasMessageContaining("v1/namespaces/default/secrets. Message: Internal Server Error.");
 	}
 
 	@Test
-	void locateShouldNotThrowExceptionOnFailureWhenFailFastIsDisabled() {
-		final String name = "my-config";
-		final String namespace = "default";
-		final String path = String.format("/api/v1/namespaces/%s/secrets/%s", namespace, name);
+	void locateShouldNotThrowExceptionOnFailureWhenFailFastIsDisabled(CapturedOutput output) {
+		String name = "my-secret";
+		String namespace = "default";
+		String path = "/api/v1/namespaces/default/secrets/my-secret";
 
-		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").once();
+		mockServer.expect().withPath(path).andReturn(500, "Internal Server Error").always();
 
-		SecretsConfigProperties configMapConfigProperties = new SecretsConfigProperties();
-		configMapConfigProperties.setName(name);
-		configMapConfigProperties.setNamespace(namespace);
-		configMapConfigProperties.setEnableApi(true);
-		configMapConfigProperties.setFailFast(false);
+		SecretsConfigProperties configMapConfigProperties = new SecretsConfigProperties(true, Map.of(), List.of(),
+				List.of(), true, name, namespace, false, true, false, RetryProperties.DEFAULT);
 
 		Fabric8SecretsPropertySourceLocator locator = new Fabric8SecretsPropertySourceLocator(mockClient,
 				configMapConfigProperties, new KubernetesNamespaceProvider(new MockEnvironment()));
 
-		assertThatNoException().isThrownBy(() -> locator.locate(new MockEnvironment()));
+		List<PropertySource<?>> result = new ArrayList<>();
+		assertThatNoException().isThrownBy(() -> {
+			PropertySource<?> source = locator.locate(new MockEnvironment());
+			result.add(source);
+		});
+
+		assertThat(result.get(0)).isInstanceOf(CompositePropertySource.class);
+		CompositePropertySource composite = (CompositePropertySource) result.get(0);
+		assertThat(composite.getPropertySources()).hasSize(0);
+		assertThat(output.getOut()).contains("Failed to load source:");
+
 	}
 
 }
